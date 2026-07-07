@@ -15,6 +15,7 @@ async function loadDashboard() {
   renderLineChart('sensorChart', data.live_charts.by_sensor.current, 'Capteurs');
   renderProcessState(data.latest_process);
   renderTankTable(data.by_tank);
+  renderTankViews(data.live_charts.per_tank);
   renderSensorList(data.sensors);
 }
 
@@ -96,6 +97,83 @@ function renderTankTable(rows) {
     </div>
     ${rowsHtml}
   `;
+}
+
+function renderTankViews(tankViews) {
+  const container = document.getElementById('tank-views');
+  if (!container) return;
+
+  container.innerHTML = (tankViews || []).map((view) => `
+      <article class="tank-view-card">
+        <div class="tank-view-header">
+          <div>
+            <h4>${view.title || view.tank}</h4>
+            <p class="tank-chart-meta">${view.automation || 'Aucun automate associé'}</p>
+          </div>
+          <span>${view.sensors.length} capteurs</span>
+        </div>
+        <div class="tank-chart-full" id="tank-card-${view.tank}">
+          ${((view.series || []).flatMap(series => series.points).length === 0)
+            ? '<div class="tank-empty">Données de courant non disponibles pour cette cuve.</div>'
+            : `<canvas id="tank-chart-${view.tank}"></canvas>`}
+        </div>
+      </article>
+    `).join('');
+
+  (tankViews || []).forEach((view) => {
+    const canvasId = `tank-chart-${view.tank}`;
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    const labels = Array.from(new Set((view.series || []).flatMap(series => series.points.map(point => point.time))));
+    labels.sort((a, b) => {
+      const [ah, am, as] = a.split(':').map(Number);
+      const [bh, bm, bs] = b.split(':').map(Number);
+      return ah - bh || am - bm || as - bs;
+    });
+
+    const palette = ['#4f46e5', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981'];
+    const datasets = (view.series || []).map((series, index) => {
+      const valuesByTime = series.points.reduce((acc, point) => {
+        acc[point.time] = point.value;
+        return acc;
+      }, {});
+      return {
+        label: series.label,
+        data: labels.map((time) => valuesByTime[time] ?? null),
+        borderColor: palette[index % palette.length],
+        backgroundColor: 'transparent',
+        tension: 0.3,
+        pointRadius: 2,
+        borderWidth: 2,
+      };
+    });
+
+    chartInstances[canvasId]?.destroy();
+    chartInstances[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom' },
+          title: {
+            display: true,
+            text: view.title || `Capteurs par cuve — ${view.tank}`,
+            font: { size: 14 },
+          },
+        },
+        scales: {
+          y: { beginAtZero: false },
+          x: { grid: { display: false } },
+        },
+      },
+    });
+  });
 }
 
 function renderSensorList(sensors) {

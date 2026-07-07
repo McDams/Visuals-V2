@@ -53,6 +53,20 @@ canvas { height: 280px !important; }
 .sensor-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .sensor-list li { display: flex; justify-content: space-between; padding: 10px 12px; background: var(--panel-2); border-radius: 12px; }
 .sensor-list span { color: var(--muted); }
+.tank-views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.tank-view-card { padding: 20px; background: var(--panel-2); border-radius: 22px; border: 1px solid rgba(255,255,255,0.08); }
+.tank-view-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 16px; }
+.tank-view-header h4 { margin: 0; font-size: 1.05rem; }
+.tank-chart-meta { margin: 4px 0 0; color: var(--muted); font-size: 0.93rem; }
+.tank-view-header span { color: var(--accent); font-weight: 700; font-size: 0.95rem; }
+.tank-chart-full { height: 320px; }
+.tank-chart-full canvas { width: 100% !important; height: 100% !important; }
+.tank-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mini-chart { height: 220px; }
+
+@media (max-width: 900px) {
+  .tank-chart-grid { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 900px) {
   .stats-grid, .main-grid, .bottom-grid { grid-template-columns: 1fr; }
