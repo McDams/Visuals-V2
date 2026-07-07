@@ -44,7 +44,7 @@ body {
 .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .card-header h3 { margin: 0; font-size: 1.05rem; }
 .card-header span { color: var(--muted); font-size: 0.9rem; }
-canvas { height: 320px !important; }
+canvas { height: 280px !important; }
 .process-state { display: grid; gap: 10px; }
 .process-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--panel-2); border-radius: 12px; }
 .table-head, .table-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }

@@ -41,12 +41,40 @@
       <section class="main-grid">
         <article class="card wide-card">
           <div class="card-header">
-            <h3>Évolution des grandeurs</h3>
-            <span>Courbes temporelles</span>
+            <h3>Évolution par cuves</h3>
+            <span>Courant mesuré</span>
           </div>
-          <canvas id="timelineChart"></canvas>
+          <canvas id="tankCurrentChart"></canvas>
         </article>
 
+        <article class="card">
+          <div class="card-header">
+            <h3>Évolution par cuves</h3>
+            <span>Tension mesurée</span>
+          </div>
+          <canvas id="tankVoltageChart"></canvas>
+        </article>
+      </section>
+
+      <section class="main-grid bottom-grid">
+        <article class="card">
+          <div class="card-header">
+            <h3>Automates vs capteurs</h3>
+            <span>Comparaison en temps réel</span>
+          </div>
+          <canvas id="automationChart"></canvas>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h3>Évolution par capteurs</h3>
+            <span>Suivi détaillé</span>
+          </div>
+          <canvas id="sensorChart"></canvas>
+        </article>
+      </section>
+
+      <section class="main-grid bottom-grid">
         <article class="card">
           <div class="card-header">
             <h3>Process en cours</h3>
@@ -54,9 +82,7 @@
           </div>
           <div id="process-state" class="process-state"></div>
         </article>
-      </section>
 
-      <section class="main-grid bottom-grid">
         <article class="card">
           <div class="card-header">
             <h3>Performance par cuve</h3>
@@ -64,7 +90,9 @@
           </div>
           <div id="tank-table" class="table"></div>
         </article>
+      </section>
 
+      <section class="main-grid bottom-grid">
         <article class="card">
           <div class="card-header">
             <h3>Capteurs disponibles</h3>

@@ -1,3 +1,5 @@
+const chartInstances = {};
+
 async function loadDashboard() {
   const response = await fetch('/api/dashboard');
   const data = await response.json();
@@ -7,28 +9,37 @@ async function loadDashboard() {
   document.getElementById('measurement-points').textContent = data.summary.measurement_points;
   document.getElementById('selected-sensor').textContent = data.summary.selected_sensor;
 
-  renderTimeline(data.timeline);
+  renderLineChart('tankCurrentChart', data.live_charts.by_tank.current, 'Courant mesuré');
+  renderLineChart('tankVoltageChart', data.live_charts.by_tank.voltage, 'Tension mesurée');
+  renderLineChart('automationChart', data.live_charts.by_automation.current, 'Automates vs capteurs');
+  renderLineChart('sensorChart', data.live_charts.by_sensor.current, 'Capteurs');
   renderProcessState(data.latest_process);
   renderTankTable(data.by_tank);
   renderSensorList(data.sensors);
 }
 
-function renderTimeline(series) {
-  const ctx = document.getElementById('timelineChart');
+function renderLineChart(canvasId, series, title) {
+  const ctx = document.getElementById(canvasId);
   if (!ctx) return;
 
-  const datasets = series.map((item, index) => ({
+  if (chartInstances[canvasId]) {
+    chartInstances[canvasId].destroy();
+  }
+
+  const palette = ['#4f46e5', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981'];
+  const datasets = (series || []).map((item, index) => ({
     label: item.label,
     data: item.points.map(point => point.value),
-    borderColor: ['#4f46e5', '#06b6d4', '#f59e0b', '#ef4444'][index % 4],
+    borderColor: palette[index % palette.length],
     backgroundColor: 'transparent',
     tension: 0.25,
-    pointRadius: 1.5,
+    pointRadius: 1.2,
+    pointHoverRadius: 3,
   }));
 
-  const labels = series[0]?.points.map(point => point.time) || [];
+  const labels = (series[0]?.points || []).map(point => point.time);
 
-  new Chart(ctx, {
+  chartInstances[canvasId] = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
@@ -39,11 +50,10 @@ function renderTimeline(series) {
       maintainAspectRatio: false,
       plugins: {
         legend: { position: 'bottom' },
+        title: { display: true, text: title },
       },
       scales: {
-        y: {
-          beginAtZero: false,
-        },
+        y: { beginAtZero: false },
       },
     },
   });
@@ -92,8 +102,9 @@ function renderSensorList(sensors) {
   const container = document.getElementById('sensor-list');
   if (!container) return;
   container.innerHTML = sensors.map(sensor => `
-    <li><strong>${sensor.name}</strong><span>${sensor.tank}</span></li>
+    <li><strong>${sensor.name}</strong><span>${sensor.tank}${sensor.is_auto ? ' · Auto' : ''}</span></li>
   `).join('');
 }
 
 loadDashboard();
+setInterval(loadDashboard, 5000);

@@ -43,6 +43,51 @@ def _get_measurement_type_map():
     return {row["id"]: row for row in rows}
 
 
+def _build_series(rows, sensors, measurement_types, code, group_mode):
+    grouped = defaultdict(list)
+    sensor_lookup = {sensor.get("id"): sensor for sensor in sensors if sensor.get("id")}
+
+    for row in rows:
+        measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
+        if measurement_type.get("code") != code:
+            continue
+
+        parsed_time = _parse_time(row.get("time"))
+        value = _parse_float(row.get("value_num"))
+        if parsed_time is None or value is None:
+            continue
+
+        sensor = sensor_lookup.get(row.get("sensor_id"), {})
+        if group_mode == "tank":
+            group = sensor.get("tank") or "Inconnu"
+        elif group_mode == "automation":
+            name = (sensor.get("name") or "").lower()
+            group = "Automates" if "auto" in name else "Capteurs"
+        else:
+            group = sensor.get("name") or sensor.get("id") or "Inconnu"
+
+        grouped[group].append({"time": parsed_time, "value": value})
+
+    result = []
+    for label, values in sorted(grouped.items()):
+        values = sorted(values, key=lambda item: item["time"])
+        if len(values) > 80:
+            values = values[:: max(1, len(values) // 60)]
+        result.append(
+            {
+                "label": label,
+                "points": [
+                    {
+                        "time": item["time"].strftime("%H:%M:%S"),
+                        "value": round(item["value"], 2),
+                    }
+                    for item in values
+                ],
+            }
+        )
+    return result
+
+
 def get_dashboard_payload():
     measurement_types = _get_measurement_type_map()
     sensors = _load_csv("sensors.csv")
@@ -54,14 +99,6 @@ def get_dashboard_payload():
     )
     sensor_id = selected_sensor.get("id")
 
-    relevant_codes = {"current_measured", "voltage_measured", "current_setpoint", "voltage_setpoint"}
-    relevant_measurement_ids = {
-        row["id"]
-        for row in measurement_types.values()
-        if row.get("code") in relevant_codes
-    }
-
-    series = defaultdict(list)
     process_state = {}
     tank_stats = defaultdict(lambda: {"current_measured": [], "voltage_measured": []})
 
@@ -71,17 +108,12 @@ def get_dashboard_payload():
         if not code:
             continue
 
-        if row.get("sensor_id") == sensor_id and code in relevant_codes:
-            parsed_time = _parse_time(row.get("time"))
-            value = _parse_float(row.get("value_num"))
-            if parsed_time and value is not None:
-                series[code].append({"time": parsed_time, "value": value})
-
         if row.get("sensor_id") and code in {"current_measured", "voltage_measured"}:
             sensor = next((item for item in sensors if item.get("id") == row.get("sensor_id")), None)
             if sensor:
                 tank = sensor.get("tank") or "Inconnu"
-                if value := _parse_float(row.get("value_num")):
+                value = _parse_float(row.get("value_num"))
+                if value is not None:
                     tank_stats[tank][code].append(value)
 
         if code in {"recipe_number", "segment_number", "total_segments", "time_remaining", "time_remaining_total"}:
@@ -92,24 +124,6 @@ def get_dashboard_payload():
                     "time": parsed_time,
                     "value": value,
                 }
-
-    timeline = []
-    for code in ["current_measured", "current_setpoint", "voltage_measured", "voltage_setpoint"]:
-        values = sorted(series.get(code, []), key=lambda item: item["time"])
-        if len(values) > 80:
-            values = values[:: max(1, len(values) // 60)]
-        timeline.append(
-            {
-                "label": code.replace("_", " ").title(),
-                "points": [
-                    {
-                        "time": item["time"].strftime("%H:%M:%S"),
-                        "value": round(item["value"], 2),
-                    }
-                    for item in values
-                ],
-            }
-        )
 
     by_tank = []
     for tank_name, values in sorted(tank_stats.items()):
@@ -135,14 +149,50 @@ def get_dashboard_payload():
             "sensor_count": len([sensor for sensor in sensors if _parse_bool(sensor.get("enabled"))]),
             "measurement_points": len(measurements),
             "selected_sensor": selected_sensor.get("name") or selected_sensor.get("id"),
+            "automates_count": len([sensor for sensor in sensors if _parse_bool(sensor.get("enabled")) and (sensor.get("name") or "").lower().startswith("auto")]),
+            "manual_sensor_count": len([sensor for sensor in sensors if _parse_bool(sensor.get("enabled")) and not (sensor.get("name") or "").lower().startswith("auto")]),
         },
-        "timeline": timeline,
+        "timeline": [
+            {
+                "label": "Courant mesuré",
+                "points": [
+                    {
+                        "time": item["time"].strftime("%H:%M:%S"),
+                        "value": round(item["value"], 2),
+                    }
+                    for item in sorted(
+                        [
+                            {"time": _parse_time(row.get("time")), "value": _parse_float(row.get("value_num"))}
+                            for row in measurements
+                            if measurement_types.get(row.get("measurement_type_id"), {}).get("code") == "current_measured"
+                            and row.get("sensor_id") == sensor_id
+                            and _parse_time(row.get("time")) is not None
+                            and _parse_float(row.get("value_num")) is not None
+                        ],
+                        key=lambda item: item["time"],
+                    )
+                ],
+            }
+        ],
+        "live_charts": {
+            "by_tank": {
+                "current": _build_series(measurements, sensors, measurement_types, "current_measured", "tank"),
+                "voltage": _build_series(measurements, sensors, measurement_types, "voltage_measured", "tank"),
+            },
+            "by_automation": {
+                "current": _build_series(measurements, sensors, measurement_types, "current_measured", "automation"),
+            },
+            "by_sensor": {
+                "current": _build_series(measurements, sensors, measurement_types, "current_measured", "sensor"),
+            },
+        },
         "by_tank": by_tank,
         "latest_process": latest_process,
         "sensors": [
             {
                 "name": sensor.get("name") or "Capteur sans nom",
                 "tank": sensor.get("tank") or "Inconnu",
+                "is_auto": (sensor.get("name") or "").lower().startswith("auto"),
             }
             for sensor in sensors[:10]
         ],
