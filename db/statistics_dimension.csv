@@ -1,0 +1,4 @@
+"id","code","description"
+1,"AVG","Average / mean over interval"
+2,"MIN","Minimum over interval"
+3,"MAX","Maximum over interval"

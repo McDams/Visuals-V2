@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Visualisation de production</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Phase de test</p>
+          <h1>Visualisation de données de production</h1>
+          <p class="subtitle">Dashboard alimenté par les fichiers CSV de la base pour une première validation visuelle.</p>
+        </div>
+        <div class="hero-badge">CSV-driven</div>
+      </header>
+
+      <section class="stats-grid">
+        <article class="stat-card">
+          <p class="label">Cuves actives</p>
+          <h2 id="active-tanks">--</h2>
+        </article>
+        <article class="stat-card">
+          <p class="label">Capteurs actifs</p>
+          <h2 id="sensor-count">--</h2>
+        </article>
+        <article class="stat-card">
+          <p class="label">Points de mesure</p>
+          <h2 id="measurement-points">--</h2>
+        </article>
+        <article class="stat-card">
+          <p class="label">Capteur sélectionné</p>
+          <h2 id="selected-sensor">--</h2>
+        </article>
+      </section>
+
+      <section class="main-grid">
+        <article class="card wide-card">
+          <div class="card-header">
+            <h3>Évolution des grandeurs</h3>
+            <span>Courbes temporelles</span>
+          </div>
+          <canvas id="timelineChart"></canvas>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h3>Process en cours</h3>
+            <span>État de production</span>
+          </div>
+          <div id="process-state" class="process-state"></div>
+        </article>
+      </section>
+
+      <section class="main-grid bottom-grid">
+        <article class="card">
+          <div class="card-header">
+            <h3>Performance par cuve</h3>
+            <span>Moyennes observées</span>
+          </div>
+          <div id="tank-table" class="table"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h3>Capteurs disponibles</h3>
+            <span>Échantillon du jeu de données</span>
+          </div>
+          <ul id="sensor-list" class="sensor-list"></ul>
+        </article>
+      </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+  </body>
+</html>
