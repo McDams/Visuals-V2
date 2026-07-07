@@ -1,8 +1,18 @@
 const chartInstances = {};
 
+const dashboardState = {
+  tankViews: [],
+  filters: {
+    tank: 'all',
+    automation: 'all',
+  },
+};
+
 async function loadDashboard() {
   const response = await fetch('/api/dashboard');
   const data = await response.json();
+
+  dashboardState.tankViews = data.live_charts.per_tank || [];
 
   document.getElementById('active-tanks').textContent = data.summary.active_tanks;
   document.getElementById('sensor-count').textContent = data.summary.sensor_count;
@@ -15,7 +25,8 @@ async function loadDashboard() {
   renderLineChart('sensorChart', data.live_charts.by_sensor.current, 'Capteurs');
   renderProcessState(data.latest_process);
   renderTankTable(data.by_tank);
-  renderTankViews(data.live_charts.per_tank);
+  renderFilterPanel(dashboardState.tankViews);
+  renderTankViews(applyTankFilter(dashboardState.tankViews));
   renderSensorList(data.sensors);
 }
 
@@ -182,6 +193,54 @@ function renderSensorList(sensors) {
   container.innerHTML = sensors.map(sensor => `
     <li><strong>${sensor.name}</strong><span>${sensor.tank}${sensor.is_auto ? ' · Auto' : ''}</span></li>
   `).join('');
+}
+
+function renderFilterPanel(tankViews) {
+  const container = document.getElementById('filter-panel');
+  if (!container) return;
+
+  const tanks = ['all', ...new Set(tankViews.map(view => view.tank))];
+  container.innerHTML = `
+    <div class="filter-item">
+      <label for="tank-filter">Filtrer par cuve</label>
+      <select id="tank-filter">
+        ${tanks.map(tank => `<option value="${tank}">${tank === 'all' ? 'Toutes les cuves' : tank}</option>`).join('')}
+      </select>
+    </div>
+    <div class="filter-item">
+      <label for="automation-filter">Automate</label>
+      <select id="automation-filter">
+        <option value="all">Tous</option>
+        <option value="with">Avec automate</option>
+        <option value="without">Sans automate</option>
+      </select>
+    </div>
+  `;
+
+  document.getElementById('tank-filter').value = dashboardState.filters.tank;
+  document.getElementById('automation-filter').value = dashboardState.filters.automation;
+
+  document.getElementById('tank-filter').onchange = (event) => {
+    dashboardState.filters.tank = event.target.value;
+    renderTankViews(applyTankFilter(dashboardState.tankViews));
+  };
+
+  document.getElementById('automation-filter').onchange = (event) => {
+    dashboardState.filters.automation = event.target.value;
+    renderTankViews(applyTankFilter(dashboardState.tankViews));
+  };
+}
+
+function applyTankFilter(tankViews) {
+  return (tankViews || []).filter((view) => {
+    const matchesTank = dashboardState.filters.tank === 'all' || view.tank === dashboardState.filters.tank;
+    const isAutomated = Boolean(view.automation);
+    const matchesAutomation =
+      dashboardState.filters.automation === 'all' ||
+      (dashboardState.filters.automation === 'with' && isAutomated) ||
+      (dashboardState.filters.automation === 'without' && !isAutomated);
+    return matchesTank && matchesAutomation;
+  });
 }
 
 loadDashboard();

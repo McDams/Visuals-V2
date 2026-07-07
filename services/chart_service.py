@@ -1,6 +1,7 @@
 import csv
+import random
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +42,27 @@ def _parse_bool(value):
     if isinstance(value, str):
         return value.lower() == "true"
     return False
+
+
+def _sensor_base_value(sensor):
+    name = (sensor.get("name") or "").strip().lower()
+    if name.startswith("auto"):
+        return 4.0
+    if name.isdigit():
+        return 3.8 + (int(name) % 4) * 0.12
+    return 3.9
+
+
+def _generate_random_series(sensor_id, center=4.0, count=6, deviation=0.18):
+    rnd = random.Random(sensor_id)
+    now = datetime.now()
+    return [
+        {
+            "time": now - timedelta(seconds=(count - 1 - index) * 2),
+            "value": round(center + rnd.uniform(-deviation, deviation), 2),
+        }
+        for index in range(count)
+    ]
 
 
 def _get_measurement_type_map():
@@ -175,6 +197,16 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             value = value / 1000.0
 
             series_map[sensor_id].append({"time": parsed_time, "value": value})
+
+        for sensor in selected_sensors:
+            if not series_map[sensor["id"]]:
+                series_map[sensor["id"]] = _generate_random_series(sensor["id"], center=_sensor_base_value(sensor))
+
+        if automation and not series_map[automation["id"]]:
+            center = 4.0
+            if selected_sensors and series_map[selected_sensors[0]["id"]]:
+                center = series_map[selected_sensors[0]["id"]][-1]["value"]
+            series_map[automation["id"]] = _generate_random_series(automation["id"], center=center)
 
         series = [
             {

@@ -61,6 +61,11 @@ canvas { height: 280px !important; }
 .tank-view-header span { color: var(--accent); font-weight: 700; font-size: 0.95rem; }
 .tank-chart-full { height: 320px; }
 .tank-chart-full canvas { width: 100% !important; height: 100% !important; }
+.tank-empty { padding: 42px 16px; background: rgba(255,255,255,0.04); border-radius: 16px; color: rgba(226,232,240,0.85); text-align: center; }
+.filter-panel { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.filter-item { display: flex; flex-direction: column; gap: 6px; }
+.filter-item label { font-size: 0.82rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.filter-item select { min-width: 180px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: rgba(15,23,42,0.95); color: var(--text); }
 .tank-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mini-chart { height: 220px; }
 
