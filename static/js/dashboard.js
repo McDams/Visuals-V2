@@ -222,6 +222,16 @@ function renderTankGrid(tankViews, tankStats, alerts) {
         </div>`
         : '<div class="tank-process--empty">Aucune donnée de process (pas d\'automate)</div>';
 
+      const jobHtml = !view.automation
+        ? ''
+        : view.job
+          ? `
+          <div class="tank-job${view.job.overrun ? ' tank-job--overrun' : ''}">
+            <span class="tank-job-name">Job : ${view.job.name}</span>
+            <span class="tank-job-time">${view.job.elapsed_hours} h / ${view.job.max_hours} h${view.job.overrun ? ' · dépassé' : ''}</span>
+          </div>`
+          : '<div class="tank-job tank-job--none">Aucun job identifié (courant hors plage Porteur/Cliché)</div>';
+
       return `
       <article class="tank-card status-${visual}" id="tank-card-${view.tank}">
         <header class="tank-card-header">
@@ -236,6 +246,7 @@ function renderTankGrid(tankViews, tankStats, alerts) {
           ${hasData ? `<canvas id="chart-${view.tank}"></canvas>` : '<div class="tank-empty">Données de courant non disponibles</div>'}
         </div>
         ${nodesHtml}
+        ${jobHtml}
         ${processHtml}
         <footer class="tank-card-footer">
           <div class="tank-stat">
@@ -245,14 +256,6 @@ function renderTankGrid(tankViews, tankStats, alerts) {
           <div class="tank-stat">
             <span class="tank-stat-label">Tension actuelle</span>
             <span class="tank-stat-value">${stats.latest_voltage ?? '--'} V</span>
-          </div>
-          <div class="tank-stat">
-            <span class="tank-stat-label">Courant moy.</span>
-            <span class="tank-stat-value">${stats.avg_current ?? '--'} A</span>
-          </div>
-          <div class="tank-stat">
-            <span class="tank-stat-label">Tension moy.</span>
-            <span class="tank-stat-value">${stats.avg_voltage ?? '--'} V</span>
           </div>
           <div class="tank-stat">
             <span class="tank-stat-label">Capteurs</span>

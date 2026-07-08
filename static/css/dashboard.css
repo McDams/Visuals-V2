@@ -170,6 +170,20 @@ body {
 }
 .tank-process-updated { grid-column: 1 / -1; margin: 4px 0 0; color: var(--muted); font-size: 0.75rem; }
 
+.tank-job {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 12px; font-size: 0.85rem;
+  background: rgba(244, 114, 182, 0.08); border: 1px solid rgba(244, 114, 182, 0.28);
+}
+.tank-job-name { font-weight: 700; color: #f9a8d4; }
+.tank-job-time { font-variant-numeric: tabular-nums; color: var(--text); }
+.tank-job--overrun { background: rgba(239, 68, 68, 0.14); border-color: rgba(239, 68, 68, 0.45); }
+.tank-job--overrun .tank-job-name { color: #fca5a5; }
+.tank-job--none {
+  justify-content: center; color: var(--muted);
+  background: rgba(255, 255, 255, 0.03); border-color: var(--border);
+}
+
 .tank-nodes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .node-table {
   background: rgba(255, 255, 255, 0.03); border-radius: 14px; padding: 10px 12px;

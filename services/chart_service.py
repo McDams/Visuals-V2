@@ -250,11 +250,11 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         automation = next((sensor for sensor in tank_sensors if (sensor.get("name") or "").lower().startswith("auto")), None)
         manual_sensors = [sensor for sensor in tank_sensors if not (sensor.get("name") or "").lower().startswith("auto")]
 
-        node_mapped = [sensor for sensor in manual_sensors if get_node(tank, sensor.get("name") or "")]
+        node_mapped = [sensor for sensor in manual_sensors if get_node(tank, sensor)]
         if node_mapped:
             selected_sensors = sorted(
                 node_mapped,
-                key=lambda sensor: (get_node(tank, sensor.get("name") or ""), sensor.get("name") or ""),
+                key=lambda sensor: (get_node(tank, sensor), sensor.get("name") or ""),
             )[:4]
         else:
             selected_sensors = sorted(
@@ -300,8 +300,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 center = series_map[selected_sensors[0]["id"]][-1]["value"]
             series_map[automation["id"]] = _generate_random_series(automation["id"], center=center)
 
-        left_sensors = [s for s in selected_sensors if get_node(tank, s.get("name") or "") == "left"]
-        right_sensors = [s for s in selected_sensors if get_node(tank, s.get("name") or "") == "right"]
+        left_sensors = [s for s in selected_sensors if get_node(tank, s) == "left"]
+        right_sensors = [s for s in selected_sensors if get_node(tank, s) == "right"]
 
         status = _tank_status(
             [s["id"] for s in left_sensors],

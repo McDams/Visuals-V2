@@ -1,8 +1,17 @@
-# Physical left/right node mapping per tank, keyed by sensor "name" (as stored in
-# sensors.csv / the sensors table). Fill in KS1 and KS2 once the physical layout is known;
-# until then those tanks fall back to an unsplit view (no node table, simple running/stopped
-# status only).
+# Physical left/right node mapping per tank. Keys are matched against a sensor's "name"
+# first, then its "eui64" (used for KS2, whose manual sensors have no name in the database).
 NODE_MAP = {
+    "KS1": {"13": "left", "14": "left", "11": "right", "12": "right"},
+    "KS2": {
+        # KS2's manual sensors have no name, only an eui64. There is no physical left/right
+        # information available for them, so they are split by display_order (the two lowest
+        # = left, the two highest = right) as a deterministic placeholder — correct the
+        # mapping below once the real layout is known.
+        "F4CE3615B2076C01": "left",   # display_order 6
+        "F4CE36735C9A8290": "left",   # display_order 9
+        "F4CE36AC7ADAD99C": "right",  # display_order 10
+        "F4CE3672AAE9A258": "right",  # display_order 11
+    },
     "KS3": {"15": "left", "16": "left", "17": "right", "18": "right"},
     "KS4": {"3": "left", "7": "left", "1": "right", "2": "right"},
 }
@@ -35,5 +44,9 @@ PH_MIN = None
 PH_MAX = None
 
 
-def get_node(tank, sensor_name):
-    return NODE_MAP.get(tank, {}).get(sensor_name)
+def get_node(tank, sensor):
+    """sensor is the sensor dict; matched by name first, then eui64 (for nameless sensors)."""
+    node_map = NODE_MAP.get(tank, {})
+    name = (sensor.get("name") or "").strip()
+    eui64 = (sensor.get("eui64") or "").strip()
+    return node_map.get(name) or node_map.get(eui64)
