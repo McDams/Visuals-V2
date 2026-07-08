@@ -36,9 +36,35 @@
         <div class="ticker-track" id="alert-ticker-track"></div>
       </div>
 
-      <main class="tank-grid" id="tank-grid">
-        <p class="muted">Chargement des cuves...</p>
-      </main>
+      <section class="panel table-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Cuves</h2>
+            <span class="panel-sub" id="table-subtitle">Chargement...</span>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="tank-table">
+            <thead>
+              <tr>
+                <th>Cuve</th>
+                <th>Statut</th>
+                <th>Tendance</th>
+                <th>Courant / Tension</th>
+                <th>Noeud Gauche</th>
+                <th>Noeud Droite</th>
+                <th>Job</th>
+                <th>Process</th>
+                <th>Dernière mesure</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tank-table-body">
+              <tr><td colspan="10" class="muted table-empty">Chargement des cuves...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section class="panel">
         <div class="panel-header">
@@ -47,6 +73,13 @@
         </div>
         <div class="alerts-list" id="alerts-list"></div>
       </section>
+    </div>
+
+    <div class="modal-backdrop" id="tank-modal-backdrop" hidden>
+      <div class="tank-modal" role="dialog" aria-modal="true" aria-labelledby="tank-modal-title">
+        <button class="modal-close" id="tank-modal-close" type="button" aria-label="Fermer">&times;</button>
+        <div id="tank-modal-body"></div>
+      </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
