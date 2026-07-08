@@ -116,21 +116,6 @@ body {
 .ticker-item--info { color: var(--accent-2); }
 @keyframes ticker { to { transform: translateX(-100%); } }
 
-/* ---------- KPI strip ---------- */
-.kpi-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 14px;
-}
-.kpi-tile {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px 18px;
-}
-.kpi-label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: var(--muted); margin: 0 0 8px; }
-.kpi-value { margin: 0; font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-
 /* ---------- Tank grid ---------- */
 .tank-grid {
   display: grid;
@@ -155,6 +140,17 @@ body {
   border-left-color: var(--critical);
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35), 0 14px 32px rgba(239, 68, 68, 0.18);
 }
+.tank-card.status-unknown { border-left-color: var(--muted); }
+
+.status-badge {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 5px 12px; border-radius: 999px; font-size: 0.72rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  background: rgba(148, 163, 184, 0.15); color: var(--muted);
+}
+.status-badge--ok { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+.status-badge--warn { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
+.status-badge--critical { background: rgba(239, 68, 68, 0.2); color: #fca5a5; animation: blink 1.4s infinite; }
 
 .tank-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .tank-card-header h3 { margin: 0; font-size: 1.4rem; font-weight: 800; }
@@ -174,10 +170,19 @@ body {
 }
 .tank-process-updated { grid-column: 1 / -1; margin: 4px 0 0; color: var(--muted); font-size: 0.75rem; }
 
-.status-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--muted); margin-top: 4px; flex-shrink: 0; }
-.status-ok .status-dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
-.status-warn .status-dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
-.status-critical .status-dot { background: var(--critical); box-shadow: 0 0 8px var(--critical); animation: blink 1.2s infinite; }
+.tank-nodes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.node-table {
+  background: rgba(255, 255, 255, 0.03); border-radius: 14px; padding: 10px 12px;
+  border: 1px solid var(--border);
+}
+.node-table--imbalanced { border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.07); }
+.node-table-title {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin: 0 0 6px;
+}
+.node-table-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 2px 0; }
+.node-table-empty { color: var(--muted); font-size: 0.8rem; text-align: center; padding: 10px 0; }
 
 .tank-chart { height: 230px; }
 .tank-chart canvas { width: 100% !important; height: 100% !important; }
@@ -188,7 +193,7 @@ body {
 }
 
 .tank-card-footer {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 10px;
   padding-top: 12px; border-top: 1px solid var(--border);
 }
 .tank-stat { display: flex; flex-direction: column; gap: 3px; }
@@ -218,17 +223,17 @@ body {
 @media (max-width: 1000px) {
   .tank-grid { grid-template-columns: 1fr; }
   .alert-row { grid-template-columns: 1fr; gap: 4px; }
+  .tank-nodes { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {
   .wall { padding: 16px; }
   .topbar { flex-direction: column; align-items: flex-start; }
   .status-cluster { width: 100%; justify-content: space-between; }
-  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .conn-dot, .alert-pill--critical, .status-critical .status-dot, .ticker-track {
+  .conn-dot, .alert-pill--critical, .status-badge--critical, .ticker-track {
     animation: none !important;
   }
 }

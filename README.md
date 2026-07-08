@@ -14,6 +14,7 @@ Contenu
 - [Connecter la base PostgreSQL (temps réel)](#connecter-la-base-postgresql-temps-réel)
 - [Référence API](#référence-api)
 - [Modèle de données et format CSV](#modèle-de-données--format-csv)
+- [Logique métier & configuration](#logique-métier--configuration-servicestank_configpy)
 - [Sécurité](#sécurité)
 - [Dépannage](#dépannage)
 
@@ -37,6 +38,7 @@ Structure du projet
   - `chart_service.py` — construction des séries par cuve pour les graphiques
   - `kpi_service.py` — calcul des KPI
   - `alert_service.py` — génération des alertes
+  - `tank_config.py` — configuration métier : nœuds gauche/droite par cuve, seuils d'arrêt et de déséquilibre, définitions des jobs (Porteur/Cliché), placeholder pH
 - `config/database.py` — connexion PostgreSQL (`psycopg2`), configurée via variables d'environnement
 - `db/` — fixtures CSV pour le mode démo : `sensors.csv`, `measurement_types.csv`, `measurements.csv`
 - `templates/dashboard.html` — page unique du tableau de bord
@@ -199,6 +201,22 @@ Les fichiers CSV se trouvent dans `db/` et ont les formats suivants (identiques 
 - `measurements.csv` — time (ISO8601), sensor_id, measurement_type_id, statistic_id, value_num, internal_count
 
 Conservez les timestamps en ISO8601 (idéalement avec fuseau horaire) pour éviter les problèmes de parsing.
+
+Logique métier & configuration (`services/tank_config.py`)
+-----------------------------------------------------------
+
+Tous les seuils opérationnels sont centralisés dans `services/tank_config.py` :
+
+- `NODE_MAP` — association capteur → nœud (`left`/`right`) par cuve, utilisée pour le tableau de répartition et le statut Noeud-G/Noeud-D. **KS1 et KS2 ne sont pas encore renseignés** (pas d'information physique disponible) : ces deux cuves affichent "Non assigné" tant que `NODE_MAP` n'est pas complété avec leurs capteurs gauche/droite.
+- `STOP_CURRENT_THRESHOLD_A` (10 A) et `STOP_DURATION_SECONDS` (60 s) — définissent quand un nœud/une cuve est considéré à l'arrêt.
+- `IMBALANCE_THRESHOLD_A` (5 A) — écart maximal toléré entre les capteurs d'une même cuve avant l'alerte "Écart Ampérage".
+- `CHART_CURRENT_AXIS_MAX` (220 A) — échelle fixe partagée par tous les graphiques de cuve (à garder synchronisée avec `CURRENT_AXIS_MAX` dans `static/js/dashboard.js`).
+- `JOBS` — bandes de courant utilisées pour détecter automatiquement le job actif à partir du courant de l'automate (Porteur ≈ 90 A / 16 h max, Cliché ≈ 180 A / 2 h max) et déclencher l'alerte "Temps de production" en cas de dépassement.
+- `PH_MEASUREMENT_CODE` / `PH_MIN` / `PH_MAX` — inactifs par défaut : aucun code de mesure pH n'existe dans le schéma actuel. Renseignez ces trois valeurs (code de `measurement_types` + plage acceptable) pour activer l'alerte "Alerte pH".
+
+Notes sur les capteurs individuels : dans les données actuelles, seuls les automates (`Auto KS2`, `Auto KS4`) rapportent une tension (`voltage_measured`) — les capteurs de nœuds ne rapportent que du courant. Le courant/tension "actuel" et "moyen" affichés par cuve viennent donc de l'automate ; le tableau de répartition par nœud compare le courant (pas la tension) entre capteurs.
+
+À noter en mode démo (CSV) : les courants synthétiques (~3,8-4,3 A) sont sous le seuil de 10 A, donc toutes les cuves affichent le statut "Arrêt" — c'est attendu, pas un bug. En mode PostgreSQL avec des courants de production réels, les statuts En cours / Noeud-G / Noeud-D refléteront l'activité réelle.
 
 Sécurité
 -----------------------

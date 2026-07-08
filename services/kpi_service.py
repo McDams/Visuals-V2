@@ -19,7 +19,18 @@ def get_kpis():
     # Aggregate simple KPIs
     temp_values = []
     current_values = []
-    tank_map = defaultdict(lambda: {"current": [], "voltage": [], "sensors": set(), "last_seen": None})
+    tank_map = defaultdict(
+        lambda: {
+            "current": [],
+            "voltage": [],
+            "sensors": set(),
+            "last_seen": None,
+            "latest_current": None,
+            "latest_current_time": None,
+            "latest_voltage": None,
+            "latest_voltage_time": None,
+        }
+    )
 
     sensor_lookup = {s.get("id"): s for s in sensors}
 
@@ -32,20 +43,27 @@ def get_kpis():
 
         sensor = sensor_lookup.get(row.get("sensor_id"))
         tank = (sensor.get("tank") if sensor else None) or "Inconnu"
+        t = _parse_time(row.get("time"))
 
         if code == "temperature":
             temp_values.append(val)
         if code == "current_measured":
             # measurements are in milli-units in CSV; convert to A
-            current_values.append(val / 1000.0)
-            tank_map[tank]["current"].append(val / 1000.0)
+            amps = val / 1000.0
+            current_values.append(amps)
+            tank_map[tank]["current"].append(amps)
+            if t and (tank_map[tank]["latest_current_time"] is None or t > tank_map[tank]["latest_current_time"]):
+                tank_map[tank]["latest_current_time"] = t
+                tank_map[tank]["latest_current"] = amps
         if code == "voltage_measured":
             tank_map[tank]["voltage"].append(val)
+            if t and (tank_map[tank]["latest_voltage_time"] is None or t > tank_map[tank]["latest_voltage_time"]):
+                tank_map[tank]["latest_voltage_time"] = t
+                tank_map[tank]["latest_voltage"] = val
 
         if sensor:
             tank_map[tank]["sensors"].add(sensor.get("id"))
 
-        t = _parse_time(row.get("time"))
         if t:
             last = tank_map[tank]["last_seen"]
             if not last or t > last:
@@ -58,6 +76,8 @@ def get_kpis():
                 "tank": tank,
                 "avg_current": round(sum(data["current"]) / len(data["current"]), 2) if data["current"] else 0,
                 "avg_voltage": round(sum(data["voltage"]) / len(data["voltage"]), 2) if data["voltage"] else 0,
+                "latest_current": round(data["latest_current"], 2) if data["latest_current"] is not None else None,
+                "latest_voltage": round(data["latest_voltage"], 2) if data["latest_voltage"] is not None else None,
                 "sensor_count": len(data["sensors"]),
                 "last_seen": data["last_seen"].isoformat() if data["last_seen"] else None,
             }

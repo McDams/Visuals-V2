@@ -1,6 +1,18 @@
 const chartInstances = {};
 const REFRESH_MS = 5000;
-const PALETTE = ['#22d3ee', '#818cf8', '#fbbf24', '#f87171', '#34d399', '#f472b6'];
+const PALETTE = ['#22d3ee', '#818cf8', '#fbbf24', '#34d399'];
+const AUTOMATE_COLOR = '#f472b6';
+// Fixed current axis (A) shared by every tank chart. Keep in sync with
+// services/tank_config.py CHART_CURRENT_AXIS_MAX.
+const CURRENT_AXIS_MAX = 220;
+
+const STATUS_LABELS = {
+  en_cours: 'En cours',
+  noeud_g: 'Noeud-G',
+  noeud_d: 'Noeud-D',
+  arret: 'Arrêt',
+  inconnu: 'Inconnu',
+};
 
 function setText(id, value) {
   const el = document.getElementById(id);
@@ -46,11 +58,34 @@ function setConnectionStatus(ok) {
   setText('conn-label', ok ? 'Données en direct' : 'Connexion perdue');
 }
 
-function tankStatusFromAlerts(tank, alerts) {
-  const relevant = alerts.filter((a) => a.tank === tank);
-  if (relevant.some((a) => a.severity === 'major')) return 'critical';
-  if (relevant.some((a) => a.severity === 'minor')) return 'warn';
-  return 'ok';
+function statusVisual(view, alerts) {
+  const hasMajorAlert = alerts.some((a) => a.tank === view.tank && a.severity === 'major');
+  if (hasMajorAlert) return 'critical';
+  if (view.status === 'en_cours') return 'ok';
+  if (view.status === 'noeud_g' || view.status === 'noeud_d') return 'warn';
+  if (view.status === 'arret') return 'critical';
+  return 'unknown';
+}
+
+function renderNodeTable(title, node) {
+  if (!node) {
+    return `
+      <div class="node-table">
+        <p class="node-table-title"><span>${title}</span></p>
+        <p class="node-table-empty">Non assigné</p>
+      </div>`;
+  }
+  const rows = node.sensors
+    .map((s) => {
+      const delta = s.delta != null ? ` <span class="muted">(${s.delta > 0 ? '+' : ''}${s.delta})</span>` : '';
+      return `<div class="node-table-row"><span>${s.name}</span><span>${s.current != null ? s.current + ' A' : '--'}${delta}</span></div>`;
+    })
+    .join('');
+  return `
+    <div class="node-table${node.balanced === false ? ' node-table--imbalanced' : ''}">
+      <p class="node-table-title"><span>${title}</span><span>${node.avg_current != null ? node.avg_current + ' A moy.' : '--'}</span></p>
+      ${rows}
+    </div>`;
 }
 
 async function loadDashboard() {
@@ -67,7 +102,6 @@ async function loadDashboard() {
     const alertsPayload = await alertsResp.json();
     const alerts = alertsPayload.alerts || [];
 
-    renderKpis(kpis);
     setText('process-summary', `Dernière synchronisation : ${new Date().toLocaleTimeString('fr-FR')}`);
     renderAlertPill(alerts);
     renderAlertTicker(alerts);
@@ -79,13 +113,6 @@ async function loadDashboard() {
     console.warn('Erreur de chargement du tableau de bord', err);
     setConnectionStatus(false);
   }
-}
-
-function renderKpis(kpis) {
-  setText('kpi-tanks', kpis.nombre_cuves ?? '--');
-  setText('kpi-sensors', kpis.nombre_capteurs ?? '--');
-  setText('kpi-current', kpis.courant_moyen != null ? `${kpis.courant_moyen} A` : '--');
-  setText('kpi-temp', kpis.temperature_moyenne != null ? `${kpis.temperature_moyenne} °C` : '--');
 }
 
 function renderAlertPill(alerts) {
@@ -164,9 +191,11 @@ function renderTankGrid(tankViews, tankStats, alerts) {
   grid.innerHTML = tankViews
     .map((view) => {
       const stats = statsByTank[view.tank] || {};
-      const status = tankStatusFromAlerts(view.tank, alerts);
+      const visual = statusVisual(view, alerts);
+      const statusLabel = STATUS_LABELS[view.status] || 'Inconnu';
       const hasData = (view.series || []).some((s) => s.points.length > 0);
       const process = view.process || {};
+      const nodesHtml = `<div class="tank-nodes">${renderNodeTable('Noeud Gauche', view.nodes?.left)}${renderNodeTable('Noeud Droite', view.nodes?.right)}</div>`;
 
       const lastSeenMs = view.last_seen ? new Date(view.last_seen).getTime() : NaN;
       const isStale = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs > 20000;
@@ -194,20 +223,29 @@ function renderTankGrid(tankViews, tankStats, alerts) {
         : '<div class="tank-process--empty">Aucune donnée de process (pas d\'automate)</div>';
 
       return `
-      <article class="tank-card status-${status}" id="tank-card-${view.tank}">
+      <article class="tank-card status-${visual}" id="tank-card-${view.tank}">
         <header class="tank-card-header">
           <div>
             <h3>${view.tank}</h3>
             <p class="tank-automation">${view.automation || 'Aucun automate associé'}</p>
             ${lastSeenHtml}
           </div>
-          <span class="status-dot" title="${status}"></span>
+          <span class="status-badge status-badge--${visual}">${statusLabel}</span>
         </header>
         <div class="tank-chart">
           ${hasData ? `<canvas id="chart-${view.tank}"></canvas>` : '<div class="tank-empty">Données de courant non disponibles</div>'}
         </div>
+        ${nodesHtml}
         ${processHtml}
         <footer class="tank-card-footer">
+          <div class="tank-stat">
+            <span class="tank-stat-label">Courant actuel</span>
+            <span class="tank-stat-value">${stats.latest_current ?? '--'} A</span>
+          </div>
+          <div class="tank-stat">
+            <span class="tank-stat-label">Tension actuelle</span>
+            <span class="tank-stat-value">${stats.latest_voltage ?? '--'} V</span>
+          </div>
           <div class="tank-stat">
             <span class="tank-stat-label">Courant moy.</span>
             <span class="tank-stat-value">${stats.avg_current ?? '--'} A</span>
@@ -235,18 +273,40 @@ function renderTankGrid(tankViews, tankStats, alerts) {
       return ah - bh || am - bm || as - bs;
     });
 
-    const datasets = (view.series || []).map((series, index) => {
+    let sensorIndex = 0;
+    const hasAutomate = (view.series || []).some((s) => s.isAutomate);
+    const datasets = (view.series || []).map((series) => {
       const byTime = Object.fromEntries(series.points.map((p) => [p.time, p.value]));
+      const isAutomate = Boolean(series.isAutomate);
+      const color = isAutomate ? AUTOMATE_COLOR : PALETTE[sensorIndex % PALETTE.length];
+      if (!isAutomate) sensorIndex += 1;
       return {
         label: series.label,
         data: labels.map((t) => byTime[t] ?? null),
-        borderColor: PALETTE[index % PALETTE.length],
+        borderColor: color,
         backgroundColor: 'transparent',
         tension: 0.3,
         pointRadius: 0,
-        borderWidth: 2,
+        borderWidth: isAutomate ? 3 : 2,
+        borderDash: isAutomate ? [6, 4] : undefined,
+        yAxisID: isAutomate ? 'y1' : 'y',
       };
     });
+
+    const scales = {
+      x: { grid: { display: false }, ticks: { color: '#64748b', maxTicksLimit: 6 } },
+      // Fixed, shared axis (0..CURRENT_AXIS_MAX) so every tank reads at the same scale, and
+      // so a large real automate value never squashes the manual sensor lines near zero.
+      y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+    };
+    if (hasAutomate) {
+      scales.y1 = {
+        position: 'right',
+        min: 0,
+        ticks: { color: AUTOMATE_COLOR },
+        grid: { display: false },
+      };
+    }
 
     chartInstances[view.tank]?.destroy();
     chartInstances[view.tank] = new Chart(canvas, {
@@ -260,10 +320,7 @@ function renderTankGrid(tankViews, tankStats, alerts) {
           legend: { position: 'bottom', labels: { color: '#cbd5f5', boxWidth: 10, font: { size: 11 } } },
           tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.formattedValue} A` } },
         },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: '#64748b', maxTicksLimit: 6 } },
-          y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.06)' } },
-        },
+        scales,
       },
     });
   });

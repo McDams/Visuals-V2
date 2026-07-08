@@ -10,6 +10,13 @@ from services.data_source import (
     parse_float as _parse_float,
     parse_time as _parse_time,
 )
+from services.tank_config import (
+    IMBALANCE_THRESHOLD_A,
+    JOBS,
+    STOP_CURRENT_THRESHOLD_A,
+    STOP_DURATION_SECONDS,
+    get_node,
+)
 
 
 def _sensor_base_value(sensor):
@@ -64,7 +71,7 @@ def _build_series(rows, sensors, measurement_types, code, group_mode):
             value = value / 1000.0
 
         sensor = sensor_lookup.get(row.get("sensor_id"), {})
-        if group_mode == "tank": 
+        if group_mode == "tank":
             group = sensor.get("tank") or "Inconnu"
         elif group_mode == "automation":
             name = (sensor.get("name") or "").lower()
@@ -92,6 +99,104 @@ def _build_series(rows, sensors, measurement_types, code, group_mode):
             }
         )
     return result
+
+
+def _node_stopped(sensor_ids, series_map, threshold=STOP_CURRENT_THRESHOLD_A, stop_seconds=STOP_DURATION_SECONDS):
+    """Return True if every sensor in sensor_ids has been below threshold for longer than
+    stop_seconds, False if at least one is currently active, or None if there is no data."""
+    latest_time = None
+    latest_active_time = None
+    currently_active = False
+
+    for sensor_id in sensor_ids:
+        points = series_map.get(sensor_id) or []
+        if not points:
+            continue
+        last_point = points[-1]
+        if latest_time is None or last_point["time"] > latest_time:
+            latest_time = last_point["time"]
+        if last_point["value"] >= threshold:
+            currently_active = True
+        for point in points:
+            if point["value"] >= threshold and (latest_active_time is None or point["time"] > latest_active_time):
+                latest_active_time = point["time"]
+
+    if latest_time is None:
+        return None
+    if currently_active:
+        return False
+    if latest_active_time is None:
+        return True
+    return (latest_time - latest_active_time).total_seconds() > stop_seconds
+
+
+def _tank_status(left_ids, right_ids, all_manual_ids, series_map):
+    if left_ids or right_ids:
+        left_stopped = _node_stopped(left_ids, series_map)
+        right_stopped = _node_stopped(right_ids, series_map)
+        if left_stopped and right_stopped:
+            return "arret"
+        if left_stopped:
+            return "noeud_g"
+        if right_stopped:
+            return "noeud_d"
+        if left_stopped is False or right_stopped is False:
+            return "en_cours"
+        return "inconnu"
+
+    all_stopped = _node_stopped(all_manual_ids, series_map)
+    if all_stopped is None:
+        return "inconnu"
+    return "arret" if all_stopped else "en_cours"
+
+
+def _build_node_tables(left_sensors, right_sensors, series_map):
+    def _table(node_sensors):
+        if not node_sensors:
+            return None
+        latest = []
+        for sensor in node_sensors:
+            points = series_map.get(sensor["id"]) or []
+            value = points[-1]["value"] if points else None
+            latest.append({"name": sensor.get("name") or sensor.get("id"), "current": value})
+
+        known_values = [item["current"] for item in latest if item["current"] is not None]
+        avg = round(sum(known_values) / len(known_values), 2) if known_values else None
+
+        for item in latest:
+            item["current"] = round(item["current"], 2) if item["current"] is not None else None
+            item["delta"] = round(item["current"] - avg, 2) if item["current"] is not None and avg is not None else None
+
+        balanced = all(item["delta"] is not None and abs(item["delta"]) <= IMBALANCE_THRESHOLD_A for item in latest) if known_values else None
+
+        return {"sensors": latest, "avg_current": avg, "balanced": balanced}
+
+    return {"left": _table(left_sensors), "right": _table(right_sensors)}
+
+
+def _detect_job(automate_points):
+    if not automate_points:
+        return None
+
+    latest_value = automate_points[-1]["value"]
+    job = next((j for j in JOBS if j["current_min"] <= latest_value <= j["current_max"]), None)
+    if job is None:
+        return None
+
+    start_time = automate_points[-1]["time"]
+    for point in reversed(automate_points):
+        if job["current_min"] <= point["value"] <= job["current_max"]:
+            start_time = point["time"]
+        else:
+            break
+
+    elapsed_hours = round((automate_points[-1]["time"] - start_time).total_seconds() / 3600, 2)
+    return {
+        "name": job["name"],
+        "elapsed_hours": elapsed_hours,
+        "max_hours": job["max_duration_hours"],
+        "overrun": elapsed_hours > job["max_duration_hours"],
+    }
 
 
 def _select_tank_sensors(tank_sensors):
@@ -145,14 +250,21 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         automation = next((sensor for sensor in tank_sensors if (sensor.get("name") or "").lower().startswith("auto")), None)
         manual_sensors = [sensor for sensor in tank_sensors if not (sensor.get("name") or "").lower().startswith("auto")]
 
-        selected_sensors = sorted(
-            manual_sensors,
-            key=lambda sensor: (
-                -current_counts.get(sensor["id"], 0),
-                int(sensor.get("display_order")) if sensor.get("display_order") and sensor.get("display_order").isdigit() else 0,
-                sensor.get("name") or sensor.get("id") or "",
-            ),
-        )[:4]
+        node_mapped = [sensor for sensor in manual_sensors if get_node(tank, sensor.get("name") or "")]
+        if node_mapped:
+            selected_sensors = sorted(
+                node_mapped,
+                key=lambda sensor: (get_node(tank, sensor.get("name") or ""), sensor.get("name") or ""),
+            )[:4]
+        else:
+            selected_sensors = sorted(
+                manual_sensors,
+                key=lambda sensor: (
+                    -current_counts.get(sensor["id"], 0),
+                    int(sensor.get("display_order")) if sensor.get("display_order") and sensor.get("display_order").isdigit() else 0,
+                    sensor.get("name") or sensor.get("id") or "",
+                ),
+            )[:4]
 
         series_map = {sensor["id"]: [] for sensor in selected_sensors}
         if automation:
@@ -175,6 +287,9 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
 
             series_map[sensor_id].append({"time": parsed_time, "value": value})
 
+        for sensor_id in series_map:
+            series_map[sensor_id] = sorted(series_map[sensor_id], key=lambda item: item["time"])
+
         for sensor in selected_sensors:
             if not series_map[sensor["id"]]:
                 series_map[sensor["id"]] = _generate_random_series(sensor["id"], center=_sensor_base_value(sensor))
@@ -185,6 +300,18 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 center = series_map[selected_sensors[0]["id"]][-1]["value"]
             series_map[automation["id"]] = _generate_random_series(automation["id"], center=center)
 
+        left_sensors = [s for s in selected_sensors if get_node(tank, s.get("name") or "") == "left"]
+        right_sensors = [s for s in selected_sensors if get_node(tank, s.get("name") or "") == "right"]
+
+        status = _tank_status(
+            [s["id"] for s in left_sensors],
+            [s["id"] for s in right_sensors],
+            [s["id"] for s in selected_sensors],
+            series_map,
+        )
+        nodes = _build_node_tables(left_sensors, right_sensors, series_map)
+        job = _detect_job(series_map.get(automation["id"])) if automation else None
+
         series = [
             {
                 "label": sensor.get("name") or sensor.get("id") or "Capteur inconnu",
@@ -193,7 +320,7 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                         "time": item["time"].strftime("%H:%M:%S"),
                         "value": round(item["value"], 2),
                     }
-                    for item in sorted(series_map[sensor["id"]], key=lambda item: item["time"])
+                    for item in series_map[sensor["id"]]
                 ],
             }
             for sensor in selected_sensors
@@ -203,12 +330,13 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             series.append(
                 {
                     "label": automation.get("name") or "Automate",
+                    "isAutomate": True,
                     "points": [
                         {
                             "time": item["time"].strftime("%H:%M:%S"),
                             "value": round(item["value"], 2),
                         }
-                        for item in sorted(series_map[automation["id"]], key=lambda item: item["time"])
+                        for item in series_map[automation["id"]]
                     ],
                 }
             )
@@ -220,10 +348,22 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 "title": f"{tank} / {automation.get('name') if automation else 'Aucun automate'}",
                 "sensors": [sensor.get("name") or sensor.get("id") or "Capteur inconnu" for sensor in selected_sensors],
                 "series": series,
+                "status": status,
+                "nodes": nodes,
+                "job": job,
             }
         )
 
     return view
+
+
+def get_tank_views():
+    """Public entry point used by other services (e.g. alerts) that need the same enriched
+    per-tank view (status, node tables, job detection) without recomputing it themselves."""
+    measurement_types = _get_measurement_type_map()
+    sensors = load_sensors()
+    measurements = load_measurements()
+    return _build_tank_sensor_view(measurements, sensors, measurement_types)
 
 
 def get_dashboard_payload():
