@@ -65,8 +65,12 @@ def get_alerts(threshold_current=4.7):
 
         t = _parse_time(row.get("time"))
         if t:
-            if not last_seen[sensor.get("id") if sensor else row.get("sensor_id")] or t > last_seen[sensor.get("id") if sensor else row.get("sensor_id")]:
-                last_seen[sensor.get("id") if sensor else row.get("sensor_id")] = t
+            # normalize timezone: prefer naive datetimes for comparison with now()
+            if getattr(t, 'tzinfo', None) is not None:
+                t = t.replace(tzinfo=None)
+            key = sensor.get("id") if sensor else row.get("sensor_id")
+            if not last_seen[key] or t > last_seen[key]:
+                last_seen[key] = t
 
     alerts = []
 

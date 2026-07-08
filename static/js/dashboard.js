@@ -11,23 +11,50 @@ const dashboardState = {
 async function loadDashboard() {
   const response = await fetch('/api/dashboard');
   const data = await response.json();
-
   dashboardState.tankViews = data.live_charts.per_tank || [];
 
-  document.getElementById('active-tanks').textContent = data.summary.active_tanks;
-  document.getElementById('sensor-count').textContent = data.summary.sensor_count;
+  // Populate basic summary from dashboard payload
   document.getElementById('measurement-points').textContent = data.summary.measurement_points;
   document.getElementById('selected-sensor').textContent = data.summary.selected_sensor;
+
+  // Fetch KPIs and alerts from dedicated endpoints
+  try {
+    const [kpisResp, alertsResp] = await Promise.all([
+      fetch('/api/kpis'),
+      fetch('/api/alerts'),
+    ]);
+    const kpis = await kpisResp.json();
+    const alerts = await alertsResp.json();
+
+    document.getElementById('active-tanks').textContent = kpis.nombre_cuves ?? '--';
+    document.getElementById('sensor-count').textContent = kpis.nombre_capteurs ?? '--';
+
+    renderAlerts(alerts.alerts || []);
+  } catch (err) {
+    console.warn('Impossible de charger KPI/alertes', err);
+  }
 
   renderLineChart('tankCurrentChart', data.live_charts.by_tank.current, 'Courant mesuré');
   renderLineChart('tankVoltageChart', data.live_charts.by_tank.voltage, 'Tension mesurée');
   renderLineChart('automationChart', data.live_charts.by_automation.current, 'Automates vs capteurs');
-  renderLineChart('sensorChart', data.live_charts.by_sensor.current, 'Capteurs');
   renderProcessState(data.latest_process);
   renderTankTable(data.by_tank);
   renderFilterPanel(dashboardState.tankViews);
   renderTankViews(applyTankFilter(dashboardState.tankViews));
   renderSensorList(data.sensors);
+}
+
+function renderAlerts(alerts) {
+  const container = document.getElementById('alerts-list');
+  if (!container) return;
+  if (!alerts || alerts.length === 0) {
+    container.innerHTML = '<p class="muted">Aucune alerte détectée.</p>';
+    return;
+  }
+  container.innerHTML = '<ul>' + alerts.map(a => `\
+    <li class="alert-item alert-${a.severity || 'info'}">\
+      <strong>${a.severity?.toUpperCase() || 'INFO'}</strong> — ${a.message} <span class="muted">${a.tank ? '· ' + a.tank : ''}${a.sensor ? ' · ' + a.sensor : ''}</span>\
+    </li>`).join('') + '</ul>';
 }
 
 function renderLineChart(canvasId, series, title) {
