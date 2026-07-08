@@ -222,15 +222,13 @@ function renderTankGrid(tankViews, tankStats, alerts) {
         </div>`
         : '<div class="tank-process--empty">Aucune donnée de process (pas d\'automate)</div>';
 
-      const jobHtml = !view.automation
-        ? ''
-        : view.job
-          ? `
-          <div class="tank-job${view.job.overrun ? ' tank-job--overrun' : ''}">
-            <span class="tank-job-name">Job : ${view.job.name}</span>
-            <span class="tank-job-time">${view.job.elapsed_hours} h / ${view.job.max_hours} h${view.job.overrun ? ' · dépassé' : ''}</span>
-          </div>`
-          : '<div class="tank-job tank-job--none">Aucun job identifié (courant hors plage Porteur/Cliché)</div>';
+      const jobHtml = view.job
+        ? `
+        <div class="tank-job${view.job.overrun ? ' tank-job--overrun' : ''}">
+          <span class="tank-job-name">Job : ${view.job.name}</span>
+          <span class="tank-job-time">${view.job.elapsed_hours} h / ${view.job.max_hours} h${view.job.overrun ? ' · dépassé' : ''}</span>
+        </div>`
+        : '<div class="tank-job tank-job--none">Aucun job identifié (courant hors plage Porteur/Cliché)</div>';
 
       return `
       <article class="tank-card status-${visual}" id="tank-card-${view.tank}">

@@ -199,6 +199,37 @@ def _detect_job(automate_points):
     }
 
 
+def _sum_series(sensor_ids, series_map):
+    """Merge several chronological per-sensor series into a single total-current series.
+
+    The automate's current is the tank's total current redistributed across its node
+    sensors, so summing every sensor's latest known value at each timestamp reconstructs
+    the tank-wide current even for tanks without an automate. A point is only emitted once
+    every sensor has reported at least one value, to avoid understating the sum early on.
+    """
+    sensor_ids = [sid for sid in sensor_ids if series_map.get(sid)]
+    if not sensor_ids:
+        return []
+
+    pointers = {sid: 0 for sid in sensor_ids}
+    last_value = {sid: None for sid in sensor_ids}
+    all_times = sorted({point["time"] for sid in sensor_ids for point in series_map[sid]})
+
+    result = []
+    for t in all_times:
+        for sid in sensor_ids:
+            points = series_map[sid]
+            idx = pointers[sid]
+            while idx < len(points) and points[idx]["time"] <= t:
+                last_value[sid] = points[idx]["value"]
+                idx += 1
+            pointers[sid] = idx
+        known = [v for v in last_value.values() if v is not None]
+        if len(known) == len(sensor_ids):
+            result.append({"time": t, "value": round(sum(known), 2)})
+    return result
+
+
 def _select_tank_sensors(tank_sensors):
     manual_sensors = [
         sensor for sensor in tank_sensors if not (sensor.get("name") or "").lower().startswith("auto")
@@ -310,7 +341,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             series_map,
         )
         nodes = _build_node_tables(left_sensors, right_sensors, series_map)
-        job = _detect_job(series_map.get(automation["id"])) if automation else None
+        total_current_series = _sum_series([s["id"] for s in selected_sensors], series_map)
+        job = _detect_job(total_current_series)
 
         series = [
             {

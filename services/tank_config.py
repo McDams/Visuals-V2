@@ -29,8 +29,10 @@ IMBALANCE_THRESHOLD_A = 5.0
 # tank-wide current than the individual node sensors.
 CHART_CURRENT_AXIS_MAX = 220
 
-# Job current bands used to auto-detect which job is running (based on the automate's
-# current) and how long it is allowed to run before a production-time alert fires.
+# Job current bands used to auto-detect which job is running (based on the tank's total
+# current — the sum of its node sensors' currents, which equals the automate's current
+# since that current is redistributed across the sensors) and how long it is allowed to
+# run before a production-time alert fires.
 JOBS = [
     {"name": "Porteur", "current_min": 75.0, "current_max": 105.0, "max_duration_hours": 16},
     {"name": "Cliché", "current_min": 160.0, "current_max": 200.0, "max_duration_hours": 2},
