@@ -21,7 +21,24 @@ const state = {
   tankStats: [],
   alerts: [],
   openTank: null,
+  // Tracks user-toggled expand/collapse per tank group in the alerts panel, so the choice
+  // survives the next 5s poll re-render instead of resetting every time.
+  manualGroupState: new Map(),
 };
+
+const ALERT_ICONS = {
+  'Arrêt Programmé': '⏸',
+  'Écart Ampérage': '⚡',
+  'Temps de production': '⏱',
+  'Alerte pH': '🧪',
+};
+
+function iconForAlert(a) {
+  if (a.alert_type && ALERT_ICONS[a.alert_type]) return ALERT_ICONS[a.alert_type];
+  if (a.metric === 'current') return '🔥';
+  if (a.message === 'Pas de données récentes') return '📡';
+  return a.severity === 'major' ? '⚠️' : 'ℹ️';
+}
 
 function setText(id, value) {
   const el = document.getElementById(id);
@@ -181,23 +198,83 @@ function renderAlertsPanel(alerts) {
   if (!container) return;
 
   if (alerts.length === 0) {
-    container.innerHTML = '<p class="muted">Tout est nominal.</p>';
+    container.innerHTML = `
+      <div class="alerts-empty">
+        <div class="alerts-empty-icon">✓</div>
+        <p class="alerts-empty-title">Tout est nominal</p>
+        <p class="alerts-empty-sub">Aucune alerte active sur les cuves suivies.</p>
+      </div>`;
     return;
   }
 
-  container.innerHTML = alerts
-    .map((a) => {
-      const location = [a.tank, a.sensor].filter(Boolean).join(' · ');
-      const lastSeen = a.last_seen ? `Dernière donnée : ${formatDateTime(a.last_seen)}` : '';
-      const clickable = a.tank ? ' alert-row--clickable' : '';
-      return `
-    <div class="alert-row alert-row--${a.severity || 'info'}${clickable}" data-tank="${a.tank || ''}">
-      <strong>${(a.severity || 'info').toUpperCase()}</strong>
-      <span>${a.message}</span>
-      <span class="muted">${[location, lastSeen].filter(Boolean).join(' · ')}</span>
+  const majorCount = alerts.filter((a) => a.severity === 'major').length;
+  const minorCount = alerts.filter((a) => a.severity === 'minor').length;
+
+  const grouped = new Map();
+  const ungrouped = [];
+  alerts.forEach((a) => {
+    if (!a.tank) {
+      ungrouped.push(a);
+      return;
+    }
+    if (!grouped.has(a.tank)) grouped.set(a.tank, []);
+    grouped.get(a.tank).push(a);
+  });
+
+  const tanks = Array.from(grouped.keys()).sort((t1, t2) => {
+    const hasMajor1 = grouped.get(t1).some((a) => a.severity === 'major');
+    const hasMajor2 = grouped.get(t2).some((a) => a.severity === 'major');
+    if (hasMajor1 !== hasMajor2) return hasMajor1 ? -1 : 1;
+    return t1.localeCompare(t2);
+  });
+
+  const alertItemHtml = (a, tank) => {
+    const meta = [a.alert_type, a.sensor, a.last_seen ? formatDateTime(a.last_seen) : null].filter(Boolean).join(' · ');
+    return `
+      <div class="alert-item alert-item--${a.severity || 'info'}"${tank ? ` data-tank="${tank}"` : ''}>
+        <span class="alert-item-icon">${iconForAlert(a)}</span>
+        <div class="alert-item-content">
+          <p class="alert-item-message">${a.message}</p>
+          ${meta ? `<p class="alert-item-meta">${meta}</p>` : ''}
+        </div>
+      </div>`;
+  };
+
+  const summaryHtml = `
+    <div class="alerts-summary">
+      <div class="alert-stat alert-stat--major">
+        <span class="alert-stat-count">${majorCount}</span>
+        <span class="alert-stat-label">Majeure${majorCount > 1 ? 's' : ''}</span>
+      </div>
+      <div class="alert-stat alert-stat--minor">
+        <span class="alert-stat-count">${minorCount}</span>
+        <span class="alert-stat-label">Mineure${minorCount > 1 ? 's' : ''}</span>
+      </div>
     </div>`;
+
+  const groupsHtml = tanks
+    .map((tank) => {
+      const tankAlerts = grouped.get(tank);
+      const hasMajor = tankAlerts.some((a) => a.severity === 'major');
+      const open = state.manualGroupState.has(tank) ? state.manualGroupState.get(tank) : hasMajor;
+
+      return `
+      <div class="alert-group${open ? '' : ' alert-group--collapsed'}${hasMajor ? ' alert-group--major' : ''}">
+        <button class="alert-group-header" type="button" data-toggle-tank="${tank}">
+          <span class="alert-group-name">${tank}</span>
+          <span class="alert-group-count">${tankAlerts.length} alerte${tankAlerts.length > 1 ? 's' : ''}</span>
+          <span class="alert-group-chevron">⌄</span>
+        </button>
+        <div class="alert-group-body">
+          <div class="alert-group-body-inner">${tankAlerts.map((a) => alertItemHtml(a, tank)).join('')}</div>
+        </div>
+      </div>`;
     })
     .join('');
+
+  const ungroupedHtml = ungrouped.map((a) => alertItemHtml(a, null)).join('');
+
+  container.innerHTML = `${summaryHtml}<div class="alert-groups">${groupsHtml}${ungroupedHtml}</div>`;
 }
 
 function renderSparkline(canvasId, series, color) {
@@ -374,14 +451,17 @@ function renderTankModal() {
     ? `
       <p class="modal-alerts-title">Alertes liées</p>
       <div class="modal-alerts">${relatedAlerts
-        .map(
-          (a) => `
-        <div class="alert-row alert-row--${a.severity || 'info'}">
-          <strong>${(a.severity || 'info').toUpperCase()}</strong>
-          <span>${a.message}</span>
-          <span class="muted">${a.sensor || ''}</span>
-        </div>`
-        )
+        .map((a) => {
+          const meta = [a.alert_type, a.sensor].filter(Boolean).join(' · ');
+          return `
+        <div class="alert-item alert-item--${a.severity || 'info'}">
+          <span class="alert-item-icon">${iconForAlert(a)}</span>
+          <div class="alert-item-content">
+            <p class="alert-item-message">${a.message}</p>
+            ${meta ? `<p class="alert-item-meta">${meta}</p>` : ''}
+          </div>
+        </div>`;
+        })
         .join('')}</div>`
     : '';
 
@@ -502,8 +582,17 @@ document.getElementById('tank-table-body')?.addEventListener('keydown', (event) 
   }
 });
 document.getElementById('alerts-list')?.addEventListener('click', (event) => {
-  const row = event.target.closest('.alert-row--clickable');
-  if (row && row.dataset.tank) openTankModal(row.dataset.tank);
+  const toggle = event.target.closest('[data-toggle-tank]');
+  if (toggle) {
+    const tank = toggle.dataset.toggleTank;
+    const group = toggle.closest('.alert-group');
+    const willOpen = group.classList.contains('alert-group--collapsed');
+    state.manualGroupState.set(tank, willOpen);
+    group.classList.toggle('alert-group--collapsed', !willOpen);
+    return;
+  }
+  const item = event.target.closest('.alert-item[data-tank]');
+  if (item && item.dataset.tank) openTankModal(item.dataset.tank);
 });
 document.getElementById('alert-ticker-track')?.addEventListener('click', (event) => {
   const item = event.target.closest('.ticker-item--clickable');
