@@ -33,6 +33,15 @@ def _generate_random_series(sensor_id, center=4.0, count=6, deviation=0.18):
     ]
 
 
+PROCESS_CODES = {
+    "recipe_number",
+    "segment_number",
+    "total_segments",
+    "time_remaining",
+    "time_remaining_total",
+}
+
+
 def _get_measurement_type_map():
     rows = load_measurement_types()
     return {row["id"]: row for row in rows}
@@ -228,8 +237,12 @@ def get_dashboard_payload():
     )
     sensor_id = selected_sensor.get("id")
 
-    process_state = {}
+    sensor_lookup = {sensor.get("id"): sensor for sensor in sensors if sensor.get("id")}
     tank_stats = defaultdict(lambda: {"current_measured": [], "voltage_measured": []})
+    tank_last_seen = {}
+    process_values = defaultdict(dict)
+    process_code_time = {}
+    process_updated_at = {}
 
     for row in measurements:
         measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
@@ -237,24 +250,28 @@ def get_dashboard_payload():
         if not code:
             continue
 
-        if row.get("sensor_id") and code in {"current_measured", "voltage_measured"}:
-            sensor = next((item for item in sensors if item.get("id") == row.get("sensor_id")), None)
-            if sensor:
-                tank = sensor.get("tank") or "Inconnu"
-                value = _parse_float(row.get("value_num"))
-                if value is not None:
-                    if code == "current_measured":
-                        value = value / 1000.0
-                    tank_stats[tank][code].append(value)
+        sensor = sensor_lookup.get(row.get("sensor_id"))
+        tank = (sensor.get("tank") if sensor else None) or "Inconnu"
+        parsed_time = _parse_time(row.get("time"))
 
-        if code in {"recipe_number", "segment_number", "total_segments", "time_remaining", "time_remaining_total"}:
-            parsed_time = _parse_time(row.get("time"))
-            value = row.get("value_num")
-            if parsed_time:
-                process_state[code] = {
-                    "time": parsed_time,
-                    "value": value,
-                }
+        if sensor and parsed_time:
+            if tank not in tank_last_seen or parsed_time > tank_last_seen[tank]:
+                tank_last_seen[tank] = parsed_time
+
+        if code in {"current_measured", "voltage_measured"}:
+            value = _parse_float(row.get("value_num"))
+            if value is not None:
+                if code == "current_measured":
+                    value = value / 1000.0
+                tank_stats[tank][code].append(value)
+
+        if code in PROCESS_CODES and parsed_time:
+            code_key = (tank, code)
+            if code_key not in process_code_time or parsed_time > process_code_time[code_key]:
+                process_code_time[code_key] = parsed_time
+                process_values[tank][code] = row.get("value_num")
+            if tank not in process_updated_at or parsed_time > process_updated_at[tank]:
+                process_updated_at[tank] = parsed_time
 
     by_tank = []
     for tank_name, values in sorted(tank_stats.items()):
@@ -266,13 +283,23 @@ def get_dashboard_payload():
             }
         )
 
-    latest_process = {
-        "recipe_number": process_state.get("recipe_number", {}).get("value"),
-        "segment_number": process_state.get("segment_number", {}).get("value"),
-        "total_segments": process_state.get("total_segments", {}).get("value"),
-        "time_remaining": process_state.get("time_remaining", {}).get("value"),
-        "time_remaining_total": process_state.get("time_remaining_total", {}).get("value"),
-    }
+    def _tank_process(tank_name):
+        values = process_values.get(tank_name, {})
+        updated_at = process_updated_at.get(tank_name)
+        return {
+            "recipe_number": values.get("recipe_number"),
+            "segment_number": values.get("segment_number"),
+            "total_segments": values.get("total_segments"),
+            "time_remaining": values.get("time_remaining"),
+            "time_remaining_total": values.get("time_remaining_total"),
+            "updated_at": updated_at.isoformat() if updated_at else None,
+        }
+
+    per_tank_view = _build_tank_sensor_view(measurements, sensors, measurement_types)
+    for view in per_tank_view:
+        view["process"] = _tank_process(view["tank"])
+        last_seen = tank_last_seen.get(view["tank"])
+        view["last_seen"] = last_seen.isoformat() if last_seen else None
 
     return {
         "summary": {
@@ -319,10 +346,9 @@ def get_dashboard_payload():
             "by_sensor": {
                 "current": _build_series(measurements, sensors, measurement_types, "current_measured", "sensor"),
             },
-            "per_tank": _build_tank_sensor_view(measurements, sensors, measurement_types),
+            "per_tank": per_tank_view,
         },
         "by_tank": by_tank,
-        "latest_process": latest_process,
         "sensors": [
             {
                 "name": sensor.get("name") or "Capteur sans nom",

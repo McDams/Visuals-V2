@@ -25,7 +25,10 @@
           <div class="alert-pill" id="alert-pill" hidden>
             <span id="alert-pill-count">0</span> alerte(s)
           </div>
-          <div class="clock" id="clock">--:--:--</div>
+          <div class="clock">
+            <span class="clock-date" id="clock-date">--</span>
+            <span class="clock-time" id="clock-time">--:--:--</span>
+          </div>
         </div>
       </header>
 
@@ -34,18 +37,6 @@
       </div>
 
       <section class="kpi-strip">
-        <article class="kpi-tile kpi-tile--big">
-          <p class="kpi-label">Recette en cours</p>
-          <p class="kpi-value" id="kpi-recipe">--</p>
-        </article>
-        <article class="kpi-tile kpi-tile--big">
-          <p class="kpi-label">Segment</p>
-          <p class="kpi-value" id="kpi-segment">-- / --</p>
-        </article>
-        <article class="kpi-tile kpi-tile--big">
-          <p class="kpi-label">Temps restant</p>
-          <p class="kpi-value" id="kpi-remaining">--</p>
-        </article>
         <article class="kpi-tile">
           <p class="kpi-label">Cuves actives</p>
           <p class="kpi-value" id="kpi-tanks">--</p>

@@ -17,8 +17,24 @@ function formatDuration(seconds) {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
 }
 
+function formatDateTime(iso) {
+  if (!iso) return '--';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '--';
+  return d.toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 function tickClock() {
-  setText('clock', new Date().toLocaleTimeString('fr-FR'));
+  const now = new Date();
+  setText('clock-date', now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+  setText('clock-time', now.toLocaleTimeString('fr-FR'));
 }
 setInterval(tickClock, 1000);
 tickClock();
@@ -52,7 +68,7 @@ async function loadDashboard() {
     const alerts = alertsPayload.alerts || [];
 
     renderKpis(kpis);
-    renderProcessSummary(dashboard.latest_process || {});
+    setText('process-summary', `Dernière synchronisation : ${new Date().toLocaleTimeString('fr-FR')}`);
     renderAlertPill(alerts);
     renderAlertTicker(alerts);
     renderAlertsPanel(alerts);
@@ -70,18 +86,6 @@ function renderKpis(kpis) {
   setText('kpi-sensors', kpis.nombre_capteurs ?? '--');
   setText('kpi-current', kpis.courant_moyen != null ? `${kpis.courant_moyen} A` : '--');
   setText('kpi-temp', kpis.temperature_moyenne != null ? `${kpis.temperature_moyenne} °C` : '--');
-}
-
-function renderProcessSummary(process) {
-  const recipe = process.recipe_number ?? '--';
-  const segment = process.segment_number ?? '--';
-  const total = process.total_segments ?? '--';
-  const remaining = formatDuration(process.time_remaining);
-
-  setText('kpi-recipe', recipe);
-  setText('kpi-segment', `${segment} / ${total}`);
-  setText('kpi-remaining', remaining);
-  setText('process-summary', `Recette ${recipe} · Segment ${segment}/${total} · ${remaining} restant`);
 }
 
 function renderAlertPill(alerts) {
@@ -133,14 +137,16 @@ function renderAlertsPanel(alerts) {
   }
 
   container.innerHTML = alerts
-    .map(
-      (a) => `
+    .map((a) => {
+      const location = [a.tank, a.sensor].filter(Boolean).join(' · ');
+      const lastSeen = a.last_seen ? `Dernière donnée : ${formatDateTime(a.last_seen)}` : '';
+      return `
     <div class="alert-row alert-row--${a.severity || 'info'}">
       <strong>${(a.severity || 'info').toUpperCase()}</strong>
       <span>${a.message}</span>
-      <span class="muted">${[a.tank, a.sensor].filter(Boolean).join(' · ')}</span>
-    </div>`
-    )
+      <span class="muted">${[location, lastSeen].filter(Boolean).join(' · ')}</span>
+    </div>`;
+    })
     .join('');
 }
 
@@ -160,6 +166,32 @@ function renderTankGrid(tankViews, tankStats, alerts) {
       const stats = statsByTank[view.tank] || {};
       const status = tankStatusFromAlerts(view.tank, alerts);
       const hasData = (view.series || []).some((s) => s.points.length > 0);
+      const process = view.process || {};
+
+      const lastSeenMs = view.last_seen ? new Date(view.last_seen).getTime() : NaN;
+      const isStale = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs > 20000;
+      const lastSeenHtml = view.last_seen
+        ? `<p class="tank-last-seen${isStale ? ' tank-last-seen--stale' : ''}">Dernière mesure : ${formatDateTime(view.last_seen)}</p>`
+        : '<p class="tank-last-seen">Dernière mesure : --</p>';
+
+      const processHtml = process.recipe_number != null || process.segment_number != null
+        ? `
+        <div class="tank-process">
+          <div class="tank-stat">
+            <span class="tank-stat-label">Recette</span>
+            <span class="tank-stat-value">${process.recipe_number ?? '--'}</span>
+          </div>
+          <div class="tank-stat">
+            <span class="tank-stat-label">Segment</span>
+            <span class="tank-stat-value">${process.segment_number ?? '--'} / ${process.total_segments ?? '--'}</span>
+          </div>
+          <div class="tank-stat">
+            <span class="tank-stat-label">Temps restant</span>
+            <span class="tank-stat-value">${formatDuration(process.time_remaining)}</span>
+          </div>
+          <p class="tank-process-updated">Process mis à jour : ${formatDateTime(process.updated_at)}</p>
+        </div>`
+        : '<div class="tank-process--empty">Aucune donnée de process (pas d\'automate)</div>';
 
       return `
       <article class="tank-card status-${status}" id="tank-card-${view.tank}">
@@ -167,12 +199,14 @@ function renderTankGrid(tankViews, tankStats, alerts) {
           <div>
             <h3>${view.tank}</h3>
             <p class="tank-automation">${view.automation || 'Aucun automate associé'}</p>
+            ${lastSeenHtml}
           </div>
           <span class="status-dot" title="${status}"></span>
         </header>
         <div class="tank-chart">
           ${hasData ? `<canvas id="chart-${view.tank}"></canvas>` : '<div class="tank-empty">Données de courant non disponibles</div>'}
         </div>
+        ${processHtml}
         <footer class="tank-card-footer">
           <div class="tank-stat">
             <span class="tank-stat-label">Courant moy.</span>

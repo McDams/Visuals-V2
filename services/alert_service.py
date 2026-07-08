@@ -74,6 +74,7 @@ def get_alerts(threshold_current=4.7):
                 "tank": s.get("tank"),
                 "severity": "minor",
                 "message": "Pas de données récentes",
+                "last_seen": ls.isoformat() if ls else None,
             })
 
     # cap results

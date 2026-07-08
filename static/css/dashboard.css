@@ -86,7 +86,9 @@ body {
   animation: blink 1.4s infinite;
 }
 
-.clock {
+.clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
+.clock-date { font-size: 0.82rem; color: var(--muted); text-transform: capitalize; }
+.clock-time {
   font-variant-numeric: tabular-nums;
   font-size: 1.7rem; font-weight: 800; letter-spacing: 0.03em;
 }
@@ -126,10 +128,8 @@ body {
   border-radius: 16px;
   padding: 16px 18px;
 }
-.kpi-tile--big { background: linear-gradient(160deg, rgba(99, 102, 241, 0.16), rgba(15, 23, 42, 0.9)); border-color: rgba(99, 102, 241, 0.35); }
 .kpi-label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: var(--muted); margin: 0 0 8px; }
 .kpi-value { margin: 0; font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-.kpi-tile--big .kpi-value { font-size: 2.05rem; color: var(--accent-2); }
 
 /* ---------- Tank grid ---------- */
 .tank-grid {
@@ -159,6 +159,20 @@ body {
 .tank-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .tank-card-header h3 { margin: 0; font-size: 1.4rem; font-weight: 800; }
 .tank-automation { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
+.tank-last-seen { margin: 2px 0 0; color: var(--muted); font-size: 0.78rem; }
+.tank-last-seen--stale { color: var(--warn); font-weight: 600; }
+
+.tank-process {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  padding: 10px 12px; border-radius: 14px; background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+.tank-process--empty {
+  display: flex; align-items: center; justify-content: center;
+  padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.03);
+  color: var(--muted); font-size: 0.85rem;
+}
+.tank-process-updated { grid-column: 1 / -1; margin: 4px 0 0; color: var(--muted); font-size: 0.75rem; }
 
 .status-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--muted); margin-top: 4px; flex-shrink: 0; }
 .status-ok .status-dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
