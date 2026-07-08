@@ -38,33 +38,28 @@
         </article>
       </section>
 
-      <section class="main-grid">
-        <article class="card wide-card">
-          <div class="card-header">
-            <h3>Évolution par cuves</h3>
-            <span>Courant mesuré</span>
-          </div>
-          <canvas id="tankCurrentChart"></canvas>
-        </article>
-
-        <article class="card">
-          <div class="card-header">
-            <h3>Évolution par cuves</h3>
-            <span>Tension mesurée</span>
-          </div>
-          <canvas id="tankVoltageChart"></canvas>
-        </article>
-      </section>
-
       <section class="main-grid bottom-grid">
         <article class="card">
           <div class="card-header">
-            <h3>Automates vs capteurs</h3>
-            <span>Comparaison en temps réel</span>
+            <h3>Performance par cuve</h3>
+            <span>Moyennes observées</span>
           </div>
-          <canvas id="automationChart"></canvas>
+          <div id="tank-table" class="table"></div>
         </article>
+      </section>
 
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h3>Visualisation détaillée par cuve</h3>
+            <span>Un seul graphique par cuve avec les quatre capteurs actifs</span>
+          </div>
+          <div id="filter-panel" class="filter-panel"></div>
+        </div>
+        <div id="tank-views" class="tank-views"></div>
+      </section>
+
+      <section class="main-grid bottom-grid">
         <article class="card">
           <div class="card-header">
             <h3>Alertes</h3>
@@ -84,25 +79,6 @@
           </div>
           <div id="process-state" class="process-state"></div>
         </article>
-
-        <article class="card">
-          <div class="card-header">
-            <h3>Performance par cuve</h3>
-            <span>Moyennes observées</span>
-          </div>
-          <div id="tank-table" class="table"></div>
-        </article>
-      </section>
-
-      <section class="card">
-        <div class="card-header">
-          <div>
-            <h3>Visualisation détaillée par cuve</h3>
-            <span>Un seul graphique par cuve avec les quatre capteurs actifs</span>
-          </div>
-          <div id="filter-panel" class="filter-panel"></div>
-        </div>
-        <div id="tank-views" class="tank-views"></div>
       </section>
 
       <section class="main-grid bottom-grid">

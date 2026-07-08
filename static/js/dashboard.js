@@ -34,9 +34,6 @@ async function loadDashboard() {
     console.warn('Impossible de charger KPI/alertes', err);
   }
 
-  renderLineChart('tankCurrentChart', data.live_charts.by_tank.current, 'Courant mesuré');
-  renderLineChart('tankVoltageChart', data.live_charts.by_tank.voltage, 'Tension mesurée');
-  renderLineChart('automationChart', data.live_charts.by_automation.current, 'Automates vs capteurs');
   renderProcessState(data.latest_process);
   renderTankTable(data.by_tank);
   renderFilterPanel(dashboardState.tankViews);
