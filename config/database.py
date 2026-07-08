@@ -1,11 +1,13 @@
-import psycopg2
+import os
+
 
 def get_connection():
+    import psycopg2
 
     return psycopg2.connect(
-        host="172.23.220.11",
-        database="iotsensors",
-        user="otbiread",
-        password="***REMOVED***",
-        port="5050"
+        host=os.environ.get("PG_HOST", "localhost"),
+        database=os.environ.get("PG_DATABASE", "iotsensors"),
+        user=os.environ.get("PG_USER", "user"),
+        password=os.environ.get("PG_PASSWORD", ""),
+        port=os.environ.get("PG_PORT", "5432"),
     )

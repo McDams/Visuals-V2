@@ -1,271 +1,239 @@
 const chartInstances = {};
+const REFRESH_MS = 5000;
+const PALETTE = ['#22d3ee', '#818cf8', '#fbbf24', '#f87171', '#34d399', '#f472b6'];
 
-const dashboardState = {
-  tankViews: [],
-  filters: {
-    tank: 'all',
-    automation: 'all',
-  },
-};
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function formatDuration(seconds) {
+  const s = Number(seconds);
+  if (!Number.isFinite(s) || s < 0) return '--';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  const pad = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+}
+
+function tickClock() {
+  setText('clock', new Date().toLocaleTimeString('fr-FR'));
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+function setConnectionStatus(ok) {
+  const wrap = document.getElementById('conn-status');
+  if (!wrap) return;
+  wrap.classList.toggle('conn-status--down', !ok);
+  setText('conn-label', ok ? 'Données en direct' : 'Connexion perdue');
+}
+
+function tankStatusFromAlerts(tank, alerts) {
+  const relevant = alerts.filter((a) => a.tank === tank);
+  if (relevant.some((a) => a.severity === 'major')) return 'critical';
+  if (relevant.some((a) => a.severity === 'minor')) return 'warn';
+  return 'ok';
+}
 
 async function loadDashboard() {
-  const response = await fetch('/api/dashboard');
-  const data = await response.json();
-  dashboardState.tankViews = data.live_charts.per_tank || [];
-
-  // Populate basic summary from dashboard payload
-  document.getElementById('measurement-points').textContent = data.summary.measurement_points;
-  document.getElementById('selected-sensor').textContent = data.summary.selected_sensor;
-
-  // Fetch KPIs and alerts from dedicated endpoints
   try {
-    const [kpisResp, alertsResp] = await Promise.all([
+    const [dashResp, kpisResp, alertsResp] = await Promise.all([
+      fetch('/api/dashboard'),
       fetch('/api/kpis'),
       fetch('/api/alerts'),
     ]);
+    if (!dashResp.ok || !kpisResp.ok || !alertsResp.ok) throw new Error('HTTP error');
+
+    const dashboard = await dashResp.json();
     const kpis = await kpisResp.json();
-    const alerts = await alertsResp.json();
+    const alertsPayload = await alertsResp.json();
+    const alerts = alertsPayload.alerts || [];
 
-    document.getElementById('active-tanks').textContent = kpis.nombre_cuves ?? '--';
-    document.getElementById('sensor-count').textContent = kpis.nombre_capteurs ?? '--';
+    renderKpis(kpis);
+    renderProcessSummary(dashboard.latest_process || {});
+    renderAlertPill(alerts);
+    renderAlertTicker(alerts);
+    renderAlertsPanel(alerts);
+    renderTankGrid(dashboard.live_charts?.per_tank || [], kpis.per_tank || [], alerts);
 
-    renderAlerts(alerts.alerts || []);
+    setConnectionStatus(true);
   } catch (err) {
-    console.warn('Impossible de charger KPI/alertes', err);
+    console.warn('Erreur de chargement du tableau de bord', err);
+    setConnectionStatus(false);
   }
-
-  renderProcessState(data.latest_process);
-  renderTankTable(data.by_tank);
-  renderFilterPanel(dashboardState.tankViews);
-  renderTankViews(applyTankFilter(dashboardState.tankViews));
-  renderSensorList(data.sensors);
 }
 
-function renderAlerts(alerts) {
-  const container = document.getElementById('alerts-list');
-  if (!container) return;
-  if (!alerts || alerts.length === 0) {
-    container.innerHTML = '<p class="muted">Aucune alerte détectée.</p>';
+function renderKpis(kpis) {
+  setText('kpi-tanks', kpis.nombre_cuves ?? '--');
+  setText('kpi-sensors', kpis.nombre_capteurs ?? '--');
+  setText('kpi-current', kpis.courant_moyen != null ? `${kpis.courant_moyen} A` : '--');
+  setText('kpi-temp', kpis.temperature_moyenne != null ? `${kpis.temperature_moyenne} °C` : '--');
+}
+
+function renderProcessSummary(process) {
+  const recipe = process.recipe_number ?? '--';
+  const segment = process.segment_number ?? '--';
+  const total = process.total_segments ?? '--';
+  const remaining = formatDuration(process.time_remaining);
+
+  setText('kpi-recipe', recipe);
+  setText('kpi-segment', `${segment} / ${total}`);
+  setText('kpi-remaining', remaining);
+  setText('process-summary', `Recette ${recipe} · Segment ${segment}/${total} · ${remaining} restant`);
+}
+
+function renderAlertPill(alerts) {
+  const pill = document.getElementById('alert-pill');
+  if (!pill) return;
+  if (alerts.length === 0) {
+    pill.hidden = true;
     return;
   }
-  container.innerHTML = '<ul>' + alerts.map(a => `\
-    <li class="alert-item alert-${a.severity || 'info'}">\
-      <strong>${a.severity?.toUpperCase() || 'INFO'}</strong> — ${a.message} <span class="muted">${a.tank ? '· ' + a.tank : ''}${a.sensor ? ' · ' + a.sensor : ''}</span>\
-    </li>`).join('') + '</ul>';
+  const majorCount = alerts.filter((a) => a.severity === 'major').length;
+  pill.hidden = false;
+  pill.classList.toggle('alert-pill--critical', majorCount > 0);
+  setText('alert-pill-count', alerts.length);
 }
 
-function renderLineChart(canvasId, series, title) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx) return;
+function renderAlertTicker(alerts) {
+  const ticker = document.getElementById('alert-ticker');
+  const track = document.getElementById('alert-ticker-track');
+  if (!ticker || !track) return;
 
-  if (chartInstances[canvasId]) {
-    chartInstances[canvasId].destroy();
+  if (alerts.length === 0) {
+    ticker.hidden = true;
+    track.innerHTML = '';
+    return;
   }
 
-  const palette = ['#4f46e5', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981'];
-  const datasets = (series || []).map((item, index) => ({
-    label: item.label,
-    data: item.points.map(point => point.value),
-    borderColor: palette[index % palette.length],
-    backgroundColor: 'transparent',
-    tension: 0.25,
-    pointRadius: 1.2,
-    pointHoverRadius: 3,
-  }));
+  const items = alerts
+    .slice(0, 8)
+    .map((a) => {
+      const severity = a.severity || 'info';
+      const location = a.tank ? ` (${a.tank})` : '';
+      return `<span class="ticker-item ticker-item--${severity}">${severity.toUpperCase()} · ${a.message}${location}</span>`;
+    })
+    .join('');
 
-  const labels = (series[0]?.points || []).map(point => point.time);
-
-  chartInstances[canvasId] = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets,
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'bottom' },
-        title: { display: true, text: title },
-      },
-      scales: {
-        y: { beginAtZero: false },
-      },
-    },
-  });
+  track.innerHTML = items + items;
+  ticker.hidden = false;
+  ticker.classList.toggle('alert-ticker--critical', alerts.some((a) => a.severity === 'major'));
 }
 
-function renderProcessState(processState) {
-  const container = document.getElementById('process-state');
+function renderAlertsPanel(alerts) {
+  const container = document.getElementById('alerts-list');
+  setText('alerts-subtitle', alerts.length ? `${alerts.length} alerte(s) active(s)` : 'Aucune alerte');
   if (!container) return;
-  const items = [
-    ['Recette', processState.recipe_number || '—'],
-    ['Segment', processState.segment_number || '—'],
-    ['Total segments', processState.total_segments || '—'],
-    ['Temps restant', processState.time_remaining || '—'],
-    ['Temps restant total', processState.time_remaining_total || '—'],
-  ];
 
-  container.innerHTML = items.map(([label, value]) => `
-    <div class="process-item">
-      <span>${label}</span>
-      <strong>${value}</strong>
-    </div>
-  `).join('');
+  if (alerts.length === 0) {
+    container.innerHTML = '<p class="muted">Tout est nominal.</p>';
+    return;
+  }
+
+  container.innerHTML = alerts
+    .map(
+      (a) => `
+    <div class="alert-row alert-row--${a.severity || 'info'}">
+      <strong>${(a.severity || 'info').toUpperCase()}</strong>
+      <span>${a.message}</span>
+      <span class="muted">${[a.tank, a.sensor].filter(Boolean).join(' · ')}</span>
+    </div>`
+    )
+    .join('');
 }
 
-function renderTankTable(rows) {
-  const container = document.getElementById('tank-table');
-  if (!container) return;
-  const rowsHtml = rows.map(row => `
-    <div class="table-row">
-      <span>${row.tank}</span>
-      <span>${row.current_measured} A</span>
-      <span>${row.voltage_measured} V</span>
-    </div>
-  `).join('');
-  container.innerHTML = `
-    <div class="table-head">
-      <span>Cuve</span>
-      <span>Courant</span>
-      <span>Tension</span>
-    </div>
-    ${rowsHtml}
-  `;
-}
+function renderTankGrid(tankViews, tankStats, alerts) {
+  const grid = document.getElementById('tank-grid');
+  if (!grid) return;
 
-function renderTankViews(tankViews) {
-  const container = document.getElementById('tank-views');
-  if (!container) return;
+  const statsByTank = Object.fromEntries((tankStats || []).map((t) => [t.tank, t]));
 
-  container.innerHTML = (tankViews || []).map((view) => `
-      <article class="tank-view-card">
-        <div class="tank-view-header">
+  if (tankViews.length === 0) {
+    grid.innerHTML = '<p class="muted">Aucune cuve disponible.</p>';
+    return;
+  }
+
+  grid.innerHTML = tankViews
+    .map((view) => {
+      const stats = statsByTank[view.tank] || {};
+      const status = tankStatusFromAlerts(view.tank, alerts);
+      const hasData = (view.series || []).some((s) => s.points.length > 0);
+
+      return `
+      <article class="tank-card status-${status}" id="tank-card-${view.tank}">
+        <header class="tank-card-header">
           <div>
-            <h4>${view.title || view.tank}</h4>
-            <p class="tank-chart-meta">${view.automation || 'Aucun automate associé'}</p>
+            <h3>${view.tank}</h3>
+            <p class="tank-automation">${view.automation || 'Aucun automate associé'}</p>
           </div>
-          <span>${view.sensors.length} capteurs</span>
+          <span class="status-dot" title="${status}"></span>
+        </header>
+        <div class="tank-chart">
+          ${hasData ? `<canvas id="chart-${view.tank}"></canvas>` : '<div class="tank-empty">Données de courant non disponibles</div>'}
         </div>
-        <div class="tank-chart-full" id="tank-card-${view.tank}">
-          ${((view.series || []).flatMap(series => series.points).length === 0)
-            ? '<div class="tank-empty">Données de courant non disponibles pour cette cuve.</div>'
-            : `<canvas id="tank-chart-${view.tank}"></canvas>`}
-        </div>
-      </article>
-    `).join('');
+        <footer class="tank-card-footer">
+          <div class="tank-stat">
+            <span class="tank-stat-label">Courant moy.</span>
+            <span class="tank-stat-value">${stats.avg_current ?? '--'} A</span>
+          </div>
+          <div class="tank-stat">
+            <span class="tank-stat-label">Tension moy.</span>
+            <span class="tank-stat-value">${stats.avg_voltage ?? '--'} V</span>
+          </div>
+          <div class="tank-stat">
+            <span class="tank-stat-label">Capteurs</span>
+            <span class="tank-stat-value">${view.sensors.length}</span>
+          </div>
+        </footer>
+      </article>`;
+    })
+    .join('');
 
-  (tankViews || []).forEach((view) => {
-    const canvasId = `tank-chart-${view.tank}`;
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
+  tankViews.forEach((view) => {
+    const canvas = document.getElementById(`chart-${view.tank}`);
+    if (!canvas) return;
 
-    const labels = Array.from(new Set((view.series || []).flatMap(series => series.points.map(point => point.time))));
-    labels.sort((a, b) => {
+    const labels = Array.from(new Set((view.series || []).flatMap((s) => s.points.map((p) => p.time)))).sort((a, b) => {
       const [ah, am, as] = a.split(':').map(Number);
       const [bh, bm, bs] = b.split(':').map(Number);
       return ah - bh || am - bm || as - bs;
     });
 
-    const palette = ['#4f46e5', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981'];
     const datasets = (view.series || []).map((series, index) => {
-      const valuesByTime = series.points.reduce((acc, point) => {
-        acc[point.time] = point.value;
-        return acc;
-      }, {});
+      const byTime = Object.fromEntries(series.points.map((p) => [p.time, p.value]));
       return {
         label: series.label,
-        data: labels.map((time) => valuesByTime[time] ?? null),
-        borderColor: palette[index % palette.length],
+        data: labels.map((t) => byTime[t] ?? null),
+        borderColor: PALETTE[index % PALETTE.length],
         backgroundColor: 'transparent',
         tension: 0.3,
-        pointRadius: 2,
+        pointRadius: 0,
         borderWidth: 2,
       };
     });
 
-    chartInstances[canvasId]?.destroy();
-    chartInstances[canvasId] = new Chart(ctx, {
+    chartInstances[view.tank]?.destroy();
+    chartInstances[view.tank] = new Chart(canvas, {
       type: 'line',
-      data: {
-        labels,
-        datasets,
-      },
+      data: { labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: {
-          legend: { position: 'bottom' },
-          title: {
-            display: true,
-            text: view.title || `Capteurs par cuve — ${view.tank}`,
-            font: { size: 14 },
-          },
+          legend: { position: 'bottom', labels: { color: '#cbd5f5', boxWidth: 10, font: { size: 11 } } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.formattedValue} A` } },
         },
         scales: {
-          y: { beginAtZero: false },
-          x: { grid: { display: false } },
+          x: { grid: { display: false }, ticks: { color: '#64748b', maxTicksLimit: 6 } },
+          y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.06)' } },
         },
       },
     });
   });
 }
 
-function renderSensorList(sensors) {
-  const container = document.getElementById('sensor-list');
-  if (!container) return;
-  container.innerHTML = sensors.map(sensor => `
-    <li><strong>${sensor.name}</strong><span>${sensor.tank}${sensor.is_auto ? ' · Auto' : ''}</span></li>
-  `).join('');
-}
-
-function renderFilterPanel(tankViews) {
-  const container = document.getElementById('filter-panel');
-  if (!container) return;
-
-  const tanks = ['all', ...new Set(tankViews.map(view => view.tank))];
-  container.innerHTML = `
-    <div class="filter-item">
-      <label for="tank-filter">Filtrer par cuve</label>
-      <select id="tank-filter">
-        ${tanks.map(tank => `<option value="${tank}">${tank === 'all' ? 'Toutes les cuves' : tank}</option>`).join('')}
-      </select>
-    </div>
-    <div class="filter-item">
-      <label for="automation-filter">Automate</label>
-      <select id="automation-filter">
-        <option value="all">Tous</option>
-        <option value="with">Avec automate</option>
-        <option value="without">Sans automate</option>
-      </select>
-    </div>
-  `;
-
-  document.getElementById('tank-filter').value = dashboardState.filters.tank;
-  document.getElementById('automation-filter').value = dashboardState.filters.automation;
-
-  document.getElementById('tank-filter').onchange = (event) => {
-    dashboardState.filters.tank = event.target.value;
-    renderTankViews(applyTankFilter(dashboardState.tankViews));
-  };
-
-  document.getElementById('automation-filter').onchange = (event) => {
-    dashboardState.filters.automation = event.target.value;
-    renderTankViews(applyTankFilter(dashboardState.tankViews));
-  };
-}
-
-function applyTankFilter(tankViews) {
-  return (tankViews || []).filter((view) => {
-    const matchesTank = dashboardState.filters.tank === 'all' || view.tank === dashboardState.filters.tank;
-    const isAutomated = Boolean(view.automation);
-    const matchesAutomation =
-      dashboardState.filters.automation === 'all' ||
-      (dashboardState.filters.automation === 'with' && isAutomated) ||
-      (dashboardState.filters.automation === 'without' && !isAutomated);
-    return matchesTank && matchesAutomation;
-  });
-}
-
 loadDashboard();
-setInterval(loadDashboard, 5000);
+setInterval(loadDashboard, REFRESH_MS);

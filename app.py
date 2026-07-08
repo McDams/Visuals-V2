@@ -1,3 +1,9 @@
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from flask import Flask, render_template
 from routes.kpis import kpis_bp
 from routes.dashboard import dashboard_bp
@@ -14,4 +20,4 @@ def home():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=int(os.environ.get("PORT", 5000)))

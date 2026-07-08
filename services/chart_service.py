@@ -1,47 +1,15 @@
-import csv
 import random
 from collections import defaultdict
 from datetime import datetime, timedelta
-from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_DIR = BASE_DIR / "db"
-
-
-def _load_csv(filename):
-    with (DB_DIR / filename).open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    for row in rows:
-        for key, value in row.items():
-            if isinstance(value, str) and value.strip().upper() == "NULL":
-                row[key] = None
-    return rows
-
-
-def _parse_float(value):
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_time(value):
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _parse_bool(value):
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.lower() == "true"
-    return False
+from services.data_source import (
+    load_measurement_types,
+    load_measurements,
+    load_sensors,
+    parse_bool as _parse_bool,
+    parse_float as _parse_float,
+    parse_time as _parse_time,
+)
 
 
 def _sensor_base_value(sensor):
@@ -66,7 +34,7 @@ def _generate_random_series(sensor_id, center=4.0, count=6, deviation=0.18):
 
 
 def _get_measurement_type_map():
-    rows = _load_csv("measurement_types.csv")
+    rows = load_measurement_types()
     return {row["id"]: row for row in rows}
 
 
@@ -251,8 +219,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
 
 def get_dashboard_payload():
     measurement_types = _get_measurement_type_map()
-    sensors = _load_csv("sensors.csv")
-    measurements = _load_csv("measurements.csv")
+    sensors = load_sensors()
+    measurements = load_measurements()
 
     selected_sensor = next(
         (sensor for sensor in sensors if _parse_bool(sensor.get("enabled")) and sensor.get("name")),

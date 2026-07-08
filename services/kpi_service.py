@@ -1,44 +1,18 @@
-import csv
 from collections import defaultdict
-from pathlib import Path
-from datetime import datetime
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_DIR = BASE_DIR / "db"
-
-
-def _load_csv(filename):
-    with (DB_DIR / filename).open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    for row in rows:
-        for key, value in row.items():
-            if isinstance(value, str) and value.strip().upper() == "NULL":
-                row[key] = None
-    return rows
-
-
-def _parse_float(value):
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_time(value):
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
+from services.data_source import (
+    load_measurement_types,
+    load_measurements,
+    load_sensors,
+    parse_float as _parse_float,
+    parse_time as _parse_time,
+)
 
 
 def get_kpis():
-    measurement_types = {row["id"]: row for row in _load_csv("measurement_types.csv")}
-    sensors = _load_csv("sensors.csv")
-    measurements = _load_csv("measurements.csv")
+    measurement_types = {row["id"]: row for row in load_measurement_types()}
+    sensors = load_sensors()
+    measurements = load_measurements()
 
     enabled_sensors = [s for s in sensors if str(s.get("enabled")).lower() == "true"]
 

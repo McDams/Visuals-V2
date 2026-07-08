@@ -3,92 +3,77 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Visualisation de production</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <title>Supervision Électroformage</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   </head>
   <body>
-    <div class="app-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Phase de test</p>
-          <h1>Visualisation de données de production</h1>
-          <p class="subtitle">Dashboard alimenté par les fichiers CSV de la base pour une première validation visuelle.</p>
+    <div class="wall">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">⌁</span>
+          <div>
+            <p class="brand-title">Supervision Électroformage</p>
+            <p class="brand-sub" id="process-summary">Chargement du process...</p>
+          </div>
         </div>
-        <div class="hero-badge">CSV-driven</div>
+        <div class="status-cluster">
+          <div class="conn-status" id="conn-status">
+            <span class="conn-dot"></span>
+            <span id="conn-label">Connexion...</span>
+          </div>
+          <div class="alert-pill" id="alert-pill" hidden>
+            <span id="alert-pill-count">0</span> alerte(s)
+          </div>
+          <div class="clock" id="clock">--:--:--</div>
+        </div>
       </header>
 
-      <section class="stats-grid">
-        <article class="stat-card">
-          <p class="label">Cuves actives</p>
-          <h2 id="active-tanks">--</h2>
+      <div class="alert-ticker" id="alert-ticker" hidden>
+        <div class="ticker-track" id="alert-ticker-track"></div>
+      </div>
+
+      <section class="kpi-strip">
+        <article class="kpi-tile kpi-tile--big">
+          <p class="kpi-label">Recette en cours</p>
+          <p class="kpi-value" id="kpi-recipe">--</p>
         </article>
-        <article class="stat-card">
-          <p class="label">Capteurs actifs</p>
-          <h2 id="sensor-count">--</h2>
+        <article class="kpi-tile kpi-tile--big">
+          <p class="kpi-label">Segment</p>
+          <p class="kpi-value" id="kpi-segment">-- / --</p>
         </article>
-        <article class="stat-card">
-          <p class="label">Points de mesure</p>
-          <h2 id="measurement-points">--</h2>
+        <article class="kpi-tile kpi-tile--big">
+          <p class="kpi-label">Temps restant</p>
+          <p class="kpi-value" id="kpi-remaining">--</p>
         </article>
-        <article class="stat-card">
-          <p class="label">Capteur sélectionné</p>
-          <h2 id="selected-sensor">--</h2>
+        <article class="kpi-tile">
+          <p class="kpi-label">Cuves actives</p>
+          <p class="kpi-value" id="kpi-tanks">--</p>
+        </article>
+        <article class="kpi-tile">
+          <p class="kpi-label">Capteurs actifs</p>
+          <p class="kpi-value" id="kpi-sensors">--</p>
+        </article>
+        <article class="kpi-tile">
+          <p class="kpi-label">Courant moyen</p>
+          <p class="kpi-value" id="kpi-current">--</p>
+        </article>
+        <article class="kpi-tile">
+          <p class="kpi-label">Température moyenne</p>
+          <p class="kpi-value" id="kpi-temp">--</p>
         </article>
       </section>
 
-      <section class="main-grid bottom-grid">
-        <article class="card">
-          <div class="card-header">
-            <h3>Performance par cuve</h3>
-            <span>Moyennes observées</span>
-          </div>
-          <div id="tank-table" class="table"></div>
-        </article>
-      </section>
+      <main class="tank-grid" id="tank-grid">
+        <p class="muted">Chargement des cuves...</p>
+      </main>
 
-      <section class="card">
-        <div class="card-header">
-          <div>
-            <h3>Visualisation détaillée par cuve</h3>
-            <span>Un seul graphique par cuve avec les quatre capteurs actifs</span>
-          </div>
-          <div id="filter-panel" class="filter-panel"></div>
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Alertes</h2>
+          <span class="panel-sub" id="alerts-subtitle">Chargement...</span>
         </div>
-        <div id="tank-views" class="tank-views"></div>
-      </section>
-
-      <section class="main-grid bottom-grid">
-        <article class="card">
-          <div class="card-header">
-            <h3>Alertes</h3>
-            <span>État et notifications</span>
-          </div>
-          <div id="alerts-list" class="alerts-list">
-            <p class="muted">Chargement des alertes...</p>
-          </div>
-        </article>
-      </section>
-
-      <section class="main-grid bottom-grid">
-        <article class="card">
-          <div class="card-header">
-            <h3>Process en cours</h3>
-            <span>État de production</span>
-          </div>
-          <div id="process-state" class="process-state"></div>
-        </article>
-      </section>
-
-      <section class="main-grid bottom-grid">
-        <article class="card">
-          <div class="card-header">
-            <h3>Capteurs disponibles</h3>
-            <span>Échantillon du jeu de données</span>
-          </div>
-          <ul id="sensor-list" class="sensor-list"></ul>
-        </article>
+        <div class="alerts-list" id="alerts-list"></div>
       </section>
     </div>
 
