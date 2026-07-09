@@ -56,10 +56,12 @@ def get_kpis():
                 tank_map[tank]["latest_current_time"] = t
                 tank_map[tank]["latest_current"] = amps
         if code == "voltage_measured":
-            tank_map[tank]["voltage"].append(val)
+            # measurements are in milli-units in CSV; convert to V
+            volts = val / 1000.0
+            tank_map[tank]["voltage"].append(volts)
             if t and (tank_map[tank]["latest_voltage_time"] is None or t > tank_map[tank]["latest_voltage_time"]):
                 tank_map[tank]["latest_voltage_time"] = t
-                tank_map[tank]["latest_voltage"] = val
+                tank_map[tank]["latest_voltage"] = volts
 
         if sensor:
             tank_map[tank]["sensors"].add(sensor.get("id"))

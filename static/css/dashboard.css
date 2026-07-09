@@ -225,6 +225,7 @@ body {
   border: 1px solid var(--border);
 }
 .node-table--imbalanced { border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.07); }
+.node-table--missing { border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.07); }
 .node-table-title {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
@@ -232,6 +233,11 @@ body {
 }
 .node-table-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 2px 0; }
 .node-table-empty { color: var(--muted); font-size: 0.8rem; text-align: center; padding: 10px 0; }
+
+.sensor-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.sensor-dot--ok { background: var(--ok); }
+.sensor-dot--down { background: var(--critical); box-shadow: 0 0 6px rgba(239, 68, 68, 0.6); }
+.node-sensor-down { color: var(--critical); font-style: italic; font-size: 0.82rem; }
 
 .tank-empty {
   height: 100%; display: flex; align-items: center; justify-content: center;
@@ -246,6 +252,7 @@ body {
 .tank-stat { display: flex; flex-direction: column; gap: 3px; }
 .tank-stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .tank-stat-value { font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tank-stat-value--warn { color: var(--warn); }
 
 /* ---------- Tank detail modal ---------- */
 .modal-backdrop {

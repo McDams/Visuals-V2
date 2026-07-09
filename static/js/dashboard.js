@@ -125,15 +125,22 @@ function renderNodeTable(title, node) {
         <p class="node-table-empty">Non assigné</p>
       </div>`;
   }
+  const missing = node.sensor_count - node.reporting_count;
   const rows = node.sensors
     .map((s) => {
       const delta = s.delta != null ? ` <span class="muted">(${s.delta > 0 ? '+' : ''}${s.delta})</span>` : '';
-      return `<div class="node-table-row"><span>${s.name}</span><span>${s.current != null ? s.current + ' A' : '--'}${delta}</span></div>`;
+      const valueHtml = s.reporting
+        ? `${s.current != null ? s.current + ' A' : '--'}${delta}`
+        : '<span class="node-sensor-down">pas de données</span>';
+      return `<div class="node-table-row"><span><span class="sensor-dot ${s.reporting ? 'sensor-dot--ok' : 'sensor-dot--down'}"></span>${s.name}</span><span>${valueHtml}</span></div>`;
     })
     .join('');
   return `
-    <div class="node-table${node.balanced === false ? ' node-table--imbalanced' : ''}">
-      <p class="node-table-title"><span>${title}</span><span>${node.avg_current != null ? node.avg_current + ' A moy.' : '--'}</span></p>
+    <div class="node-table${node.balanced === false ? ' node-table--imbalanced' : ''}${missing > 0 ? ' node-table--missing' : ''}">
+      <p class="node-table-title">
+        <span>${title}</span>
+        <span>${node.avg_current != null ? node.avg_current + ' A moy.' : '--'}${missing > 0 ? ` · ${node.reporting_count}/${node.sensor_count} capteurs` : ''}</span>
+      </p>
       ${rows}
     </div>`;
 }
@@ -300,10 +307,13 @@ function renderTankTable() {
   }
 
   const statsByTank = Object.fromEntries(state.tankStats.map((t) => [t.tank, t]));
-  const nodeCell = (node) =>
-    node
-      ? `<span class="node-cell-dot ${node.balanced === false ? 'node-cell-dot--warn' : 'node-cell-dot--ok'}"></span>${node.avg_current != null ? node.avg_current + ' A' : '--'}`
-      : '<span class="muted">Non assigné</span>';
+  const nodeCell = (node) => {
+    if (!node) return '<span class="muted">Non assigné</span>';
+    const missing = node.sensor_count - node.reporting_count;
+    const dotClass = missing > 0 ? 'node-cell-dot--warn' : node.balanced === false ? 'node-cell-dot--warn' : 'node-cell-dot--ok';
+    const suffix = missing > 0 ? ` <span class="muted">(${node.reporting_count}/${node.sensor_count})</span>` : '';
+    return `<span class="node-cell-dot ${dotClass}"></span>${node.avg_current != null ? node.avg_current + ' A' : '--'}${suffix}`;
+  };
 
   tbody.innerHTML = state.tankViews
     .map((view) => {
@@ -478,8 +488,8 @@ function renderTankModal() {
         <span class="tank-stat-value">${stats.latest_voltage ?? '--'} V</span>
       </div>
       <div class="tank-stat">
-        <span class="tank-stat-label">Capteurs</span>
-        <span class="tank-stat-value">${view.sensors.length}</span>
+        <span class="tank-stat-label">Capteurs actifs</span>
+        <span class="tank-stat-value${view.sensors_reporting < view.sensors_total ? ' tank-stat-value--warn' : ''}">${view.sensors_reporting} / ${view.sensors_total}</span>
       </div>
     </footer>
     ${alertsHtml}

@@ -67,7 +67,8 @@ def _build_series(rows, sensors, measurement_types, code, group_mode):
         value = _parse_float(row.get("value_num"))
         if parsed_time is None or value is None:
             continue
-        if code == "current_measured":
+        if code in ("current_measured", "voltage_measured"):
+            # measurements are in milli-units in CSV; convert to A / V
             value = value / 1000.0
 
         sensor = sensor_lookup.get(row.get("sensor_id"), {})
@@ -150,15 +151,26 @@ def _tank_status(left_ids, right_ids, all_manual_ids, series_map):
     return "arret" if all_stopped else "en_cours"
 
 
-def _build_node_tables(left_sensors, right_sensors, series_map):
+def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_real_data):
     def _table(node_sensors):
         if not node_sensors:
             return None
         latest = []
         for sensor in node_sensors:
+            has_data = sensor["id"] in sensors_with_real_data
             points = series_map.get(sensor["id"]) or []
             value = points[-1]["value"] if points else None
-            latest.append({"name": sensor.get("name") or sensor.get("id"), "current": value})
+            # Only report a last-seen timestamp for sensors with a real row: the synthetic
+            # fallback series is timestamped "now" and would otherwise look falsely fresh.
+            last_seen = points[-1]["time"] if has_data and points else None
+            latest.append(
+                {
+                    "name": sensor.get("name") or sensor.get("id"),
+                    "current": value,
+                    "reporting": has_data,
+                    "last_seen": last_seen.isoformat() if last_seen else None,
+                }
+            )
 
         known_values = [item["current"] for item in latest if item["current"] is not None]
         avg = round(sum(known_values) / len(known_values), 2) if known_values else None
@@ -168,8 +180,15 @@ def _build_node_tables(left_sensors, right_sensors, series_map):
             item["delta"] = round(item["current"] - avg, 2) if item["current"] is not None and avg is not None else None
 
         balanced = all(item["delta"] is not None and abs(item["delta"]) <= IMBALANCE_THRESHOLD_A for item in latest) if known_values else None
+        reporting_count = sum(1 for item in latest if item["reporting"])
 
-        return {"sensors": latest, "avg_current": avg, "balanced": balanced}
+        return {
+            "sensors": latest,
+            "avg_current": avg,
+            "balanced": balanced,
+            "reporting_count": reporting_count,
+            "sensor_count": len(latest),
+        }
 
     return {"left": _table(left_sensors), "right": _table(right_sensors)}
 
@@ -343,6 +362,11 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         for sensor_id in series_map:
             series_map[sensor_id] = sorted(series_map[sensor_id], key=lambda item: item["time"])
 
+        # Snapshot which sensors actually reported a real row before filling in the
+        # synthetic fallback below, so the UI can tell "sending data" apart from "faked
+        # for the demo" instead of a fake recent timestamp masking a silent sensor.
+        sensors_with_real_data = {sensor_id for sensor_id, points in series_map.items() if points}
+
         for sensor in selected_sensors:
             if not series_map[sensor["id"]]:
                 series_map[sensor["id"]] = _generate_random_series(sensor["id"], center=_sensor_base_value(sensor))
@@ -362,7 +386,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             [s["id"] for s in selected_sensors],
             series_map,
         )
-        nodes = _build_node_tables(left_sensors, right_sensors, series_map)
+        nodes = _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_real_data)
+        sensors_reporting = sum(1 for s in selected_sensors if s["id"] in sensors_with_real_data)
         total_current_series = _sum_series([s["id"] for s in selected_sensors], series_map)
         job = _detect_job(total_current_series)
 
@@ -405,6 +430,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 "status": status,
                 "nodes": nodes,
                 "job": job,
+                "sensors_reporting": sensors_reporting,
+                "sensors_total": len(selected_sensors),
             }
         )
 
@@ -455,8 +482,8 @@ def get_dashboard_payload():
         if code in {"current_measured", "voltage_measured"}:
             value = _parse_float(row.get("value_num"))
             if value is not None:
-                if code == "current_measured":
-                    value = value / 1000.0
+                # measurements are in milli-units in CSV; convert to A / V
+                value = value / 1000.0
                 tank_stats[tank][code].append(value)
 
         if code in PROCESS_CODES and parsed_time:
