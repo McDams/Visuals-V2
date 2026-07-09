@@ -49,6 +49,7 @@
               <tr>
                 <th>Cuve</th>
                 <th>Statut</th>
+                <th>Alerte</th>
                 <th>Tendance</th>
                 <th>Courant / Tension</th>
                 <th>Noeud Gauche</th>
@@ -60,18 +61,10 @@
               </tr>
             </thead>
             <tbody id="tank-table-body">
-              <tr><td colspan="10" class="muted table-empty">Chargement des cuves...</td></tr>
+              <tr><td colspan="11" class="muted table-empty">Chargement des cuves...</td></tr>
             </tbody>
           </table>
         </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Alertes</h2>
-          <span class="panel-sub" id="alerts-subtitle">Chargement...</span>
-        </div>
-        <div class="alerts-list" id="alerts-list"></div>
       </section>
     </div>
 
@@ -80,6 +73,14 @@
         <button class="modal-close" id="tank-modal-close" type="button" aria-label="Fermer">&times;</button>
         <div id="tank-modal-body"></div>
       </div>
+    </div>
+
+    <div class="alert-popover" id="alert-popover" hidden>
+      <div class="alert-popover-header">
+        <span id="alert-popover-title">Cuve</span>
+        <button class="alert-popover-close" id="alert-popover-close" type="button" aria-label="Fermer">&times;</button>
+      </div>
+      <div class="alert-popover-body" id="alert-popover-body"></div>
     </div>
 
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>

@@ -21,9 +21,7 @@ const state = {
   tankStats: [],
   alerts: [],
   openTank: null,
-  // Tracks user-toggled expand/collapse per tank group in the alerts panel, so the choice
-  // survives the next 5s poll re-render instead of resetting every time.
-  manualGroupState: new Map(),
+  openAlertPopoverTank: null,
 };
 
 const ALERT_ICONS = {
@@ -38,6 +36,18 @@ function iconForAlert(a) {
   if (a.metric === 'current') return '🔥';
   if (a.message === 'Pas de données récentes') return '📡';
   return a.severity === 'major' ? '⚠️' : 'ℹ️';
+}
+
+function alertItemHtml(a) {
+  const meta = [a.alert_type, a.sensor, a.last_seen ? formatDateTime(a.last_seen) : null].filter(Boolean).join(' · ');
+  return `
+    <div class="alert-item alert-item--${a.severity || 'info'}">
+      <span class="alert-item-icon">${iconForAlert(a)}</span>
+      <div class="alert-item-content">
+        <p class="alert-item-message">${a.message}</p>
+        ${meta ? `<p class="alert-item-meta">${meta}</p>` : ''}
+      </div>
+    </div>`;
 }
 
 function setText(id, value) {
@@ -141,10 +151,10 @@ async function loadDashboard() {
     setText('process-summary', `Dernière synchronisation : ${new Date().toLocaleTimeString('fr-FR')}`);
     renderAlertPill(state.alerts);
     renderAlertTicker(state.alerts);
-    renderAlertsPanel(state.alerts);
     renderTankTable();
 
     if (state.openTank) renderTankModal();
+    if (state.openAlertPopoverTank) refreshAlertPopover();
 
     setConnectionStatus(true);
   } catch (err) {
@@ -192,89 +202,52 @@ function renderAlertTicker(alerts) {
   ticker.classList.toggle('alert-ticker--critical', alerts.some((a) => a.severity === 'major'));
 }
 
-function renderAlertsPanel(alerts) {
-  const container = document.getElementById('alerts-list');
-  setText('alerts-subtitle', alerts.length ? `${alerts.length} alerte(s) active(s)` : 'Aucune alerte');
-  if (!container) return;
+function alertsForTank(tank) {
+  return state.alerts.filter((a) => a.tank === tank);
+}
 
-  if (alerts.length === 0) {
-    container.innerHTML = `
-      <div class="alerts-empty">
-        <div class="alerts-empty-icon">✓</div>
-        <p class="alerts-empty-title">Tout est nominal</p>
-        <p class="alerts-empty-sub">Aucune alerte active sur les cuves suivies.</p>
-      </div>`;
-    return;
-  }
+function popoverContentHtml(tank) {
+  const tankAlerts = alertsForTank(tank);
+  return tankAlerts.length
+    ? tankAlerts.map((a) => alertItemHtml(a)).join('')
+    : '<p class="muted alert-popover-empty">Tout fonctionne correctement.</p>';
+}
 
-  const majorCount = alerts.filter((a) => a.severity === 'major').length;
-  const minorCount = alerts.filter((a) => a.severity === 'minor').length;
+function openAlertPopover(tank, anchorEl) {
+  const popover = document.getElementById('alert-popover');
+  const body = document.getElementById('alert-popover-body');
+  const title = document.getElementById('alert-popover-title');
+  if (!popover || !body || !title || !anchorEl) return;
 
-  const grouped = new Map();
-  const ungrouped = [];
-  alerts.forEach((a) => {
-    if (!a.tank) {
-      ungrouped.push(a);
-      return;
-    }
-    if (!grouped.has(a.tank)) grouped.set(a.tank, []);
-    grouped.get(a.tank).push(a);
-  });
+  state.openAlertPopoverTank = tank;
+  const tankAlerts = alertsForTank(tank);
+  title.textContent = `${tank} · ${tankAlerts.length ? tankAlerts.length + ' alerte(s)' : 'Aucune alerte'}`;
+  body.innerHTML = popoverContentHtml(tank);
 
-  const tanks = Array.from(grouped.keys()).sort((t1, t2) => {
-    const hasMajor1 = grouped.get(t1).some((a) => a.severity === 'major');
-    const hasMajor2 = grouped.get(t2).some((a) => a.severity === 'major');
-    if (hasMajor1 !== hasMajor2) return hasMajor1 ? -1 : 1;
-    return t1.localeCompare(t2);
-  });
+  popover.hidden = false;
+  const rect = anchorEl.getBoundingClientRect();
+  const popRect = popover.getBoundingClientRect();
+  let top = rect.bottom + 8;
+  let left = rect.left;
+  if (left + popRect.width > window.innerWidth - 16) left = window.innerWidth - popRect.width - 16;
+  if (top + popRect.height > window.innerHeight - 16) top = rect.top - popRect.height - 8;
+  popover.style.top = `${Math.max(8, top)}px`;
+  popover.style.left = `${Math.max(8, left)}px`;
+}
 
-  const alertItemHtml = (a, tank) => {
-    const meta = [a.alert_type, a.sensor, a.last_seen ? formatDateTime(a.last_seen) : null].filter(Boolean).join(' · ');
-    return `
-      <div class="alert-item alert-item--${a.severity || 'info'}"${tank ? ` data-tank="${tank}"` : ''}>
-        <span class="alert-item-icon">${iconForAlert(a)}</span>
-        <div class="alert-item-content">
-          <p class="alert-item-message">${a.message}</p>
-          ${meta ? `<p class="alert-item-meta">${meta}</p>` : ''}
-        </div>
-      </div>`;
-  };
+function closeAlertPopover() {
+  state.openAlertPopoverTank = null;
+  const popover = document.getElementById('alert-popover');
+  if (popover) popover.hidden = true;
+}
 
-  const summaryHtml = `
-    <div class="alerts-summary">
-      <div class="alert-stat alert-stat--major">
-        <span class="alert-stat-count">${majorCount}</span>
-        <span class="alert-stat-label">Majeure${majorCount > 1 ? 's' : ''}</span>
-      </div>
-      <div class="alert-stat alert-stat--minor">
-        <span class="alert-stat-count">${minorCount}</span>
-        <span class="alert-stat-label">Mineure${minorCount > 1 ? 's' : ''}</span>
-      </div>
-    </div>`;
-
-  const groupsHtml = tanks
-    .map((tank) => {
-      const tankAlerts = grouped.get(tank);
-      const hasMajor = tankAlerts.some((a) => a.severity === 'major');
-      const open = state.manualGroupState.has(tank) ? state.manualGroupState.get(tank) : hasMajor;
-
-      return `
-      <div class="alert-group${open ? '' : ' alert-group--collapsed'}${hasMajor ? ' alert-group--major' : ''}">
-        <button class="alert-group-header" type="button" data-toggle-tank="${tank}">
-          <span class="alert-group-name">${tank}</span>
-          <span class="alert-group-count">${tankAlerts.length} alerte${tankAlerts.length > 1 ? 's' : ''}</span>
-          <span class="alert-group-chevron">⌄</span>
-        </button>
-        <div class="alert-group-body">
-          <div class="alert-group-body-inner">${tankAlerts.map((a) => alertItemHtml(a, tank)).join('')}</div>
-        </div>
-      </div>`;
-    })
-    .join('');
-
-  const ungroupedHtml = ungrouped.map((a) => alertItemHtml(a, null)).join('');
-
-  container.innerHTML = `${summaryHtml}<div class="alert-groups">${groupsHtml}${ungroupedHtml}</div>`;
+function refreshAlertPopover() {
+  if (!state.openAlertPopoverTank) return;
+  const tank = state.openAlertPopoverTank;
+  const tankAlerts = alertsForTank(tank);
+  setText('alert-popover-title', `${tank} · ${tankAlerts.length ? tankAlerts.length + ' alerte(s)' : 'Aucune alerte'}`);
+  const body = document.getElementById('alert-popover-body');
+  if (body) body.innerHTML = popoverContentHtml(tank);
 }
 
 function renderSparkline(canvasId, series, color) {
@@ -315,7 +288,7 @@ function renderTankTable() {
   setText('table-subtitle', state.tankViews.length ? `${state.tankViews.length} cuve(s) suivie(s) · cliquez une ligne pour le détail` : 'Aucune cuve');
 
   if (state.tankViews.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="muted table-empty">Aucune cuve disponible.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="muted table-empty">Aucune cuve disponible.</td></tr>';
     return;
   }
 
@@ -330,7 +303,9 @@ function renderTankTable() {
       const stats = statsByTank[view.tank] || {};
       const visual = statusVisual(view, state.alerts);
       const statusLabel = STATUS_LABELS[view.status] || 'Inconnu';
-      const hasMajor = state.alerts.some((a) => a.tank === view.tank && a.severity === 'major');
+      const tankAlerts = alertsForTank(view.tank);
+      const hasMajor = tankAlerts.some((a) => a.severity === 'major');
+      const hasProblem = tankAlerts.length > 0;
       const process = view.process || {};
 
       const jobCell = view.job
@@ -357,6 +332,12 @@ function renderTankTable() {
           </div>
         </td>
         <td><span class="status-badge status-badge--${visual}">${statusLabel}</span></td>
+        <td>
+          <div class="alert-dot-cell">
+            <span class="alert-dot${hasProblem ? ' alert-dot--problem' : ''}" data-tank="${view.tank}" title="${hasProblem ? tankAlerts.length + ' alerte(s)' : 'Aucune alerte'}"></span>
+            ${hasProblem ? `<span class="alert-dot-count alert-dot-count--problem">${tankAlerts.length}</span>` : ''}
+          </div>
+        </td>
         <td class="sparkline-cell"><canvas id="spark-${view.tank}"></canvas></td>
         <td class="tabular">${stats.latest_current ?? '--'} A<br /><span class="muted">${stats.latest_voltage ?? '--'} V</span></td>
         <td class="tabular">${nodeCell(view.nodes?.left)}</td>
@@ -446,23 +427,11 @@ function renderTankModal() {
     </div>`
     : '<div class="tank-job tank-job--none">Aucun job identifié (courant hors plage Porteur/Cliché)</div>';
 
-  const relatedAlerts = state.alerts.filter((a) => a.tank === view.tank);
+  const relatedAlerts = alertsForTank(view.tank);
   const alertsHtml = relatedAlerts.length
     ? `
       <p class="modal-alerts-title">Alertes liées</p>
-      <div class="modal-alerts">${relatedAlerts
-        .map((a) => {
-          const meta = [a.alert_type, a.sensor].filter(Boolean).join(' · ');
-          return `
-        <div class="alert-item alert-item--${a.severity || 'info'}">
-          <span class="alert-item-icon">${iconForAlert(a)}</span>
-          <div class="alert-item-content">
-            <p class="alert-item-message">${a.message}</p>
-            ${meta ? `<p class="alert-item-meta">${meta}</p>` : ''}
-          </div>
-        </div>`;
-        })
-        .join('')}</div>`
+      <div class="modal-alerts">${relatedAlerts.map((a) => alertItemHtml(a)).join('')}</div>`
     : '';
 
   body.innerHTML = `
@@ -570,6 +539,17 @@ document.addEventListener('keydown', (event) => {
 // children are re-rendered every poll), so a click always lands on a live listener even if
 // the table/ticker/alerts re-render mid-click.
 document.getElementById('tank-table-body')?.addEventListener('click', (event) => {
+  const dot = event.target.closest('.alert-dot');
+  if (dot) {
+    event.stopPropagation();
+    const tank = dot.dataset.tank;
+    if (state.openAlertPopoverTank === tank) {
+      closeAlertPopover();
+    } else {
+      openAlertPopover(tank, dot);
+    }
+    return;
+  }
   const row = event.target.closest('.tank-row');
   if (row) openTankModal(row.dataset.tank);
 });
@@ -581,23 +561,28 @@ document.getElementById('tank-table-body')?.addEventListener('keydown', (event) 
     openTankModal(row.dataset.tank);
   }
 });
-document.getElementById('alerts-list')?.addEventListener('click', (event) => {
-  const toggle = event.target.closest('[data-toggle-tank]');
-  if (toggle) {
-    const tank = toggle.dataset.toggleTank;
-    const group = toggle.closest('.alert-group');
-    const willOpen = group.classList.contains('alert-group--collapsed');
-    state.manualGroupState.set(tank, willOpen);
-    group.classList.toggle('alert-group--collapsed', !willOpen);
-    return;
-  }
-  const item = event.target.closest('.alert-item[data-tank]');
-  if (item && item.dataset.tank) openTankModal(item.dataset.tank);
-});
 document.getElementById('alert-ticker-track')?.addEventListener('click', (event) => {
   const item = event.target.closest('.ticker-item--clickable');
   if (item && item.dataset.tank) openTankModal(item.dataset.tank);
 });
+
+document.getElementById('alert-popover-close')?.addEventListener('click', closeAlertPopover);
+document.addEventListener('click', (event) => {
+  if (!state.openAlertPopoverTank) return;
+  const popover = document.getElementById('alert-popover');
+  if (popover && (popover.contains(event.target) || event.target.closest('.alert-dot'))) return;
+  closeAlertPopover();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.openAlertPopoverTank) closeAlertPopover();
+});
+window.addEventListener(
+  'scroll',
+  () => {
+    if (state.openAlertPopoverTank) closeAlertPopover();
+  },
+  true
+);
 
 loadDashboard();
 setInterval(loadDashboard, REFRESH_MS);
