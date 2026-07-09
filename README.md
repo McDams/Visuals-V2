@@ -22,10 +22,12 @@ Aperçu
 --------
 Cette application présente un tableau de bord opérateur qui :
 
-- Affiche une carte par cuve avec son graphique de courant (jusqu'à 4 capteurs + automate)
+- Affiche un **tableau récapitulatif** avec une ligne par cuve : statut (En cours / Noeud-G / Noeud-D / Arrêt), indicateur d'alerte vert/rouge, mini-graphique (tendance), courant/tension actuels, courant moyen par nœud gauche/droite, job en cours et process (recette/segment/temps restant)
+- Ouvre un **modal de détail** au clic sur une ligne (ou sur le bandeau d'alertes défilant) : graphique complet par cuve (capteurs de nœuds + automate sur un axe secondaire), tableaux de répartition gauche/droite, alertes liées à la cuve
+- Affiche un **point vert/rouge par cuve** dans le tableau ; un clic sur le point rouge ouvre un petit popover listant les alertes actives de cette cuve précisément
+- Détecte automatiquement le **job en cours** (Porteur/Cliché) à partir du courant total de la cuve, et affiche son heure de début et sa fin prévue — ou, si aucun job ne correspond, depuis quand la cuve est à l'arrêt
 - Calcule des KPI (courant/température moyens, nombre de cuves/capteurs actifs)
-- Suit l'état du process en cours (recette, segment, temps restant)
-- Génère des alertes (surtension de courant, capteurs sans données récentes) et les affiche en bandeau défilant + panneau détaillé
+- Génère des alertes (arrêt de cuve, écart de courant entre capteurs, dépassement de temps de production, pH hors plage une fois configuré, capteurs sans données récentes)
 - En mode CSV, reconstitue des séries synthétiques déterministes pour les capteurs sans données, pour que les démos restent lisibles
 
 Structure du projet
@@ -207,11 +209,11 @@ Logique métier & configuration (`services/tank_config.py`)
 
 Tous les seuils opérationnels sont centralisés dans `services/tank_config.py` :
 
-- `NODE_MAP` — association capteur → nœud (`left`/`right`) par cuve, utilisée pour le tableau de répartition et le statut Noeud-G/Noeud-D. **KS1 et KS2 ne sont pas encore renseignés** (pas d'information physique disponible) : ces deux cuves affichent "Non assigné" tant que `NODE_MAP` n'est pas complété avec leurs capteurs gauche/droite.
+- `NODE_MAP` — association capteur → nœud (`left`/`right`) par cuve, utilisée pour le tableau de répartition et le statut Noeud-G/Noeud-D. KS1, KS3, KS4 sont mappés à partir de leur nom de capteur. **KS2 est un placeholder** (ses capteurs manuels n'ont pas de nom en base, seulement un `eui64` — la répartition gauche/droite a été déduite du `display_order`, à corriger dans `NODE_MAP["KS2"]` dès que la disposition physique réelle est connue).
 - `STOP_CURRENT_THRESHOLD_A` (10 A) et `STOP_DURATION_SECONDS` (60 s) — définissent quand un nœud/une cuve est considéré à l'arrêt.
 - `IMBALANCE_THRESHOLD_A` (5 A) — écart maximal toléré entre les capteurs d'une même cuve avant l'alerte "Écart Ampérage".
 - `CHART_CURRENT_AXIS_MAX` (220 A) — échelle fixe partagée par tous les graphiques de cuve (à garder synchronisée avec `CURRENT_AXIS_MAX` dans `static/js/dashboard.js`).
-- `JOBS` — bandes de courant utilisées pour détecter automatiquement le job actif à partir du courant de l'automate (Porteur ≈ 90 A / 16 h max, Cliché ≈ 180 A / 2 h max) et déclencher l'alerte "Temps de production" en cas de dépassement.
+- `JOBS` — bandes de courant utilisées pour détecter automatiquement le job actif à partir du **courant total de la cuve** (somme des 4 capteurs de nœuds gauche+droite, qui reconstitue le courant de l'automate puisqu'il est redistribué aux capteurs). Chaque entrée a `current_min`/`current_max` (A) et `max_duration_hours` ; par défaut Porteur = 75-105 A / 16 h max, Cliché = 160-200 A / 2 h max. **C'est ici qu'il faut modifier les plages de courant si elles changent** — aucun autre fichier à toucher. Le dashboard affiche l'heure de début du job et sa fin prévue (début + `max_duration_hours`) ; si le courant ne correspond à aucune bande, il affiche depuis quand la cuve est à l'arrêt à la place. L'alerte "Temps de production" se déclenche si la durée écoulée dépasse `max_duration_hours`.
 - `PH_MEASUREMENT_CODE` / `PH_MIN` / `PH_MAX` — inactifs par défaut : aucun code de mesure pH n'existe dans le schéma actuel. Renseignez ces trois valeurs (code de `measurement_types` + plage acceptable) pour activer l'alerte "Alerte pH".
 
 Notes sur les capteurs individuels : dans les données actuelles, seuls les automates (`Auto KS2`, `Auto KS4`) rapportent une tension (`voltage_measured`) — les capteurs de nœuds ne rapportent que du courant. Le courant/tension "actuel" et "moyen" affichés par cuve viennent donc de l'automate ; le tableau de répartition par nœud compare le courant (pas la tension) entre capteurs.
