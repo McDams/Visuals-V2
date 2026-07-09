@@ -79,6 +79,13 @@ function formatDateTime(iso) {
   });
 }
 
+function formatTime(iso) {
+  if (!iso) return '--';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '--';
+  return d.toLocaleTimeString('fr-FR');
+}
+
 function tickClock() {
   const now = new Date();
   setText('clock-date', now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
@@ -308,9 +315,11 @@ function renderTankTable() {
       const hasProblem = tankAlerts.length > 0;
       const process = view.process || {};
 
-      const jobCell = view.job
-        ? `<span class="job-pill${view.job.overrun ? ' job-pill--overrun' : ''}">${view.job.name} · ${view.job.elapsed_hours}h/${view.job.max_hours}h</span>`
-        : '<span class="muted">--</span>';
+      const jobCell = !view.job
+        ? '<span class="muted">--</span>'
+        : view.job.name
+          ? `<span class="job-pill${view.job.overrun ? ' job-pill--overrun' : ''}">${view.job.name} · ${formatTime(view.job.start_time)} → ${formatTime(view.job.predicted_end)}</span>`
+          : `<span class="job-pill job-pill--stopped">Arrêt depuis ${formatTime(view.job.not_running_since)}</span>`;
 
       const processCell =
         process.recipe_number != null || process.segment_number != null
@@ -419,13 +428,22 @@ function renderTankModal() {
       </div>`
       : '<div class="tank-process--empty">Aucune donnée de process (pas d\'automate)</div>';
 
-  const jobHtml = view.job
-    ? `
-    <div class="tank-job${view.job.overrun ? ' tank-job--overrun' : ''}">
-      <span class="tank-job-name">Job : ${view.job.name}</span>
-      <span class="tank-job-time">${view.job.elapsed_hours} h / ${view.job.max_hours} h${view.job.overrun ? ' · dépassé' : ''}</span>
-    </div>`
-    : '<div class="tank-job tank-job--none">Aucun job identifié (courant hors plage Porteur/Cliché)</div>';
+  const jobHtml = !view.job
+    ? '<div class="tank-job tank-job--none"><div class="tank-job-main">Aucun job identifié (pas de données de courant)</div></div>'
+    : view.job.name
+      ? `
+      <div class="tank-job${view.job.overrun ? ' tank-job--overrun' : ''}">
+        <div class="tank-job-main">
+          <span class="tank-job-name">Job : ${view.job.name}</span>
+          <span class="tank-job-time">${view.job.elapsed_hours} h / ${view.job.max_hours} h${view.job.overrun ? ' · dépassé' : ''}</span>
+        </div>
+        <p class="tank-job-schedule">Début : ${formatDateTime(view.job.start_time)} · Fin prévue : ${formatDateTime(view.job.predicted_end)}</p>
+      </div>`
+      : `
+      <div class="tank-job tank-job--none">
+        <div class="tank-job-main">Aucun job en cours (courant hors plage Porteur/Cliché)</div>
+        <p class="tank-job-schedule">À l'arrêt depuis ${formatDateTime(view.job.not_running_since)}</p>
+      </div>`;
 
   const relatedAlerts = alertsForTank(view.tank);
   const alertsHtml = relatedAlerts.length

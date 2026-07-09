@@ -174,29 +174,51 @@ def _build_node_tables(left_sensors, right_sensors, series_map):
     return {"left": _table(left_sensors), "right": _table(right_sensors)}
 
 
-def _detect_job(automate_points):
-    if not automate_points:
+def _matching_job(value):
+    return next((j for j in JOBS if j["current_min"] <= value <= j["current_max"]), None)
+
+
+def _detect_job(current_points):
+    """Identify the job running on a tank from its total current, and report timing:
+
+    - If the latest current matches a job band, walk backward to find when it started
+      running that job, and derive the predicted end time from the job's max duration.
+    - Otherwise, walk backward to find since when the current has matched no job band at
+      all, i.e. since when the tank stopped running a recognizable job.
+    """
+    if not current_points:
         return None
 
-    latest_value = automate_points[-1]["value"]
-    job = next((j for j in JOBS if j["current_min"] <= latest_value <= j["current_max"]), None)
-    if job is None:
-        return None
+    latest_point = current_points[-1]
+    job = _matching_job(latest_point["value"])
 
-    start_time = automate_points[-1]["time"]
-    for point in reversed(automate_points):
-        if job["current_min"] <= point["value"] <= job["current_max"]:
-            start_time = point["time"]
+    if job:
+        start_time = latest_point["time"]
+        for point in reversed(current_points):
+            if job["current_min"] <= point["value"] <= job["current_max"]:
+                start_time = point["time"]
+            else:
+                break
+
+        elapsed_hours = round((latest_point["time"] - start_time).total_seconds() / 3600, 2)
+        predicted_end = start_time + timedelta(hours=job["max_duration_hours"])
+        return {
+            "name": job["name"],
+            "elapsed_hours": elapsed_hours,
+            "max_hours": job["max_duration_hours"],
+            "overrun": elapsed_hours > job["max_duration_hours"],
+            "start_time": start_time.isoformat(),
+            "predicted_end": predicted_end.isoformat(),
+        }
+
+    not_running_since = latest_point["time"]
+    for point in reversed(current_points):
+        if _matching_job(point["value"]) is None:
+            not_running_since = point["time"]
         else:
             break
 
-    elapsed_hours = round((automate_points[-1]["time"] - start_time).total_seconds() / 3600, 2)
-    return {
-        "name": job["name"],
-        "elapsed_hours": elapsed_hours,
-        "max_hours": job["max_duration_hours"],
-        "overrun": elapsed_hours > job["max_duration_hours"],
-    }
+    return {"name": None, "not_running_since": not_running_since.isoformat()}
 
 
 def _sum_series(sensor_ids, series_map):
