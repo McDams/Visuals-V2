@@ -28,12 +28,18 @@ def _sensor_base_value(sensor):
     return 3.9
 
 
-def _generate_random_series(sensor_id, center=4.0, count=6, deviation=0.18):
+def _generate_random_series(sensor_id, center=4.0, count=6, deviation=0.18, reference_time=None):
+    """Synthetic fallback series for a sensor with no real row in the current window.
+
+    Anchored to `reference_time` (the tank's latest real timestamp, if any) rather than
+    datetime.now(), so a silent sensor's placeholder points end at the same instant as the
+    tank's real data instead of floating disconnected in a completely different time range.
+    """
     rnd = random.Random(sensor_id)
-    now = datetime.now()
+    anchor = reference_time or datetime.now()
     return [
         {
-            "time": now - timedelta(seconds=(count - 1 - index) * 2),
+            "time": anchor - timedelta(seconds=(count - 1 - index) * 2),
             "value": round(center + rnd.uniform(-deviation, deviation), 2),
         }
         for index in range(count)
@@ -367,15 +373,28 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         # for the demo" instead of a fake recent timestamp masking a silent sensor.
         sensors_with_real_data = {sensor_id for sensor_id, points in series_map.items() if points}
 
+        # Anchor synthetic fallback points to the tank's latest real timestamp (if any)
+        # instead of datetime.now(), so a silent sensor's placeholder curve ends at the same
+        # instant as the automate/other sensors' real data rather than in an unrelated time
+        # range (this made the automate line look "not simultaneous" with sensor lines).
+        reference_time = None
+        for points in series_map.values():
+            if points and (reference_time is None or points[-1]["time"] > reference_time):
+                reference_time = points[-1]["time"]
+
         for sensor in selected_sensors:
             if not series_map[sensor["id"]]:
-                series_map[sensor["id"]] = _generate_random_series(sensor["id"], center=_sensor_base_value(sensor))
+                series_map[sensor["id"]] = _generate_random_series(
+                    sensor["id"], center=_sensor_base_value(sensor), reference_time=reference_time
+                )
 
         if automation and not series_map[automation["id"]]:
             center = 4.0
             if selected_sensors and series_map[selected_sensors[0]["id"]]:
                 center = series_map[selected_sensors[0]["id"]][-1]["value"]
-            series_map[automation["id"]] = _generate_random_series(automation["id"], center=center)
+            series_map[automation["id"]] = _generate_random_series(
+                automation["id"], center=center, reference_time=reference_time
+            )
 
         left_sensors = [s for s in selected_sensors if get_node(tank, s) == "left"]
         right_sensors = [s for s in selected_sensors if get_node(tank, s) == "right"]

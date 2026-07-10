@@ -49,9 +49,17 @@ def parse_time(value):
     from datetime import datetime
 
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+
+    if parsed.tzinfo is not None:
+        # Postgres/CSV timestamps carry a UTC-ish offset; convert to naive local time so
+        # they line up with datetime.now() (used for the synthetic fallback series and
+        # staleness checks) instead of silently mixing UTC and local hours, which made
+        # chart x-axis labels look hours apart from the rest of the UI.
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
 
 
 def parse_bool(value):
