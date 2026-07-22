@@ -1,7 +1,19 @@
 const chartInstances = {};
 const REFRESH_MS = 5000;
-const PALETTE = ['#22d3ee', '#818cf8', '#fbbf24', '#34d399'];
-const AUTOMATE_COLOR = '#f472b6';
+
+// Reads a live CSS custom property so canvas-drawn charts use the same palette as the
+// rest of the UI and stay correct across theme switches (Chart.js can't read var(...)
+// itself, it needs a resolved color string at chart-creation time).
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function chartSensorPalette() {
+  return [cssVar('--accent-2'), cssVar('--accent'), cssVar('--warn'), cssVar('--ok')];
+}
+function chartAutomateColor() {
+  return cssVar('--job-text');
+}
+
 // Fixed current axis (A) shared by every tank chart. Keep in sync with
 // services/tank_config.py CHART_CURRENT_AXIS_MAX.
 const CURRENT_AXIS_MAX = 220;
@@ -303,6 +315,10 @@ function renderSparkline(canvasId, series, color) {
   chartInstances[canvasId]?.destroy();
   if (!series || !series.points.length) return;
 
+  const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 34);
+  gradient.addColorStop(0, `${color}38`);
+  gradient.addColorStop(1, `${color}00`);
+
   chartInstances[canvasId] = new Chart(ctx, {
     type: 'line',
     data: {
@@ -311,7 +327,8 @@ function renderSparkline(canvasId, series, color) {
         {
           data: series.points.map((p) => p.value),
           borderColor: color,
-          backgroundColor: 'transparent',
+          backgroundColor: gradient,
+          fill: true,
           borderWidth: 2,
           pointRadius: 0,
           tension: 0.35,
@@ -405,7 +422,7 @@ function renderTankTable() {
   state.tankViews.forEach((view) => {
     if (view.status === 'arret') return;
     const visual = statusVisual(view, state.alerts);
-    const color = visual === 'critical' ? '#f87171' : visual === 'warn' ? '#fbbf24' : '#22d3ee';
+    const color = visual === 'critical' ? cssVar('--critical') : visual === 'warn' ? cssVar('--warn') : cssVar('--accent-2');
     renderSparkline(`spark-${view.tank}`, primarySeriesFor(view), color);
   });
 }
@@ -547,10 +564,12 @@ function initTankModalChart(view) {
 
   let sensorIndex = 0;
   const hasAutomate = (view.series || []).some((s) => s.isAutomate);
+  const sensorPalette = chartSensorPalette();
+  const automateColor = chartAutomateColor();
   const datasets = (view.series || []).map((series) => {
     const byTime = Object.fromEntries(series.points.map((p) => [p.time, p.value]));
     const isAutomate = Boolean(series.isAutomate);
-    const color = isAutomate ? AUTOMATE_COLOR : PALETTE[sensorIndex % PALETTE.length];
+    const color = isAutomate ? automateColor : sensorPalette[sensorIndex % sensorPalette.length];
     if (!isAutomate) sensorIndex += 1;
     return {
       label: series.label,
@@ -570,7 +589,7 @@ function initTankModalChart(view) {
     datasets.push({
       label: `Consigne (${setpointPerSensor} A/capteur)`,
       data: labels.map(() => setpointPerSensor),
-      borderColor: '#94a3b8',
+      borderColor: cssVar('--muted'),
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       borderDash: [3, 5],
@@ -586,7 +605,7 @@ function initTankModalChart(view) {
     y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: chartAxisColor() }, grid: { color: chartGridColor() } },
   };
   if (hasAutomate) {
-    scales.y1 = { position: 'right', min: 0, ticks: { color: AUTOMATE_COLOR }, grid: { display: false } };
+    scales.y1 = { position: 'right', min: 0, ticks: { color: automateColor }, grid: { display: false } };
   }
 
   chartInstances['tank-modal-chart']?.destroy();
