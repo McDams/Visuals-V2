@@ -9,7 +9,7 @@ from services.data_source import (
     parse_float as _parse_float,
     parse_time as _parse_time,
 )
-from services.tank_config import IMBALANCE_THRESHOLD_A, PH_MAX, PH_MEASUREMENT_CODE, PH_MIN
+from services.tank_config import CURRENT_CODES, IMBALANCE_THRESHOLD_A, PH_MAX, PH_MEASUREMENT_CODE, PH_MIN
 
 
 def get_alerts(threshold_current=4.7):
@@ -32,12 +32,12 @@ def get_alerts(threshold_current=4.7):
         val = _parse_float(row.get("value_num"))
         if val is None:
             continue
-        if code == "current_measured":
+        if code in CURRENT_CODES:
             val = val / 1000.0
         sensor = sensor_lookup.get(row.get("sensor_id"))
         tank = (sensor.get("tank") if sensor else None) or "Inconnu"
 
-        if code == "current_measured":
+        if code in CURRENT_CODES:
             tank_currents[tank].append(val)
 
         t = _parse_time(row.get("time"))

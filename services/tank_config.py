@@ -16,6 +16,13 @@ NODE_MAP = {
     "KS4": {"3": "left", "7": "left", "1": "right", "2": "right"},
 }
 
+# Measurement type codes that carry a current / voltage value. Per measurement_types'
+# descriptions, "current_measured"/"voltage_measured" are automaton-specific, while the
+# individual node sensors report under the generic "current"/"voltage" codes — both must be
+# accepted everywhere or per-sensor readings are silently dropped.
+CURRENT_CODES = {"current", "current_measured"}
+VOLTAGE_CODES = {"voltage", "voltage_measured"}
+
 # A tank/node is considered stopped once its current has stayed below this threshold for
 # longer than STOP_DURATION_SECONDS.
 STOP_CURRENT_THRESHOLD_A = 10.0

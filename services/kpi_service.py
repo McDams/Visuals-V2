@@ -7,6 +7,7 @@ from services.data_source import (
     parse_float as _parse_float,
     parse_time as _parse_time,
 )
+from services.tank_config import CURRENT_CODES, VOLTAGE_CODES
 
 
 def get_kpis():
@@ -47,7 +48,7 @@ def get_kpis():
 
         if code == "temperature":
             temp_values.append(val)
-        if code == "current_measured":
+        if code in CURRENT_CODES:
             # measurements are in milli-units in CSV; convert to A
             amps = val / 1000.0
             current_values.append(amps)
@@ -55,7 +56,7 @@ def get_kpis():
             if t and (tank_map[tank]["latest_current_time"] is None or t > tank_map[tank]["latest_current_time"]):
                 tank_map[tank]["latest_current_time"] = t
                 tank_map[tank]["latest_current"] = amps
-        if code == "voltage_measured":
+        if code in VOLTAGE_CODES:
             # measurements are in milli-units in CSV; convert to V
             volts = val / 1000.0
             tank_map[tank]["voltage"].append(volts)

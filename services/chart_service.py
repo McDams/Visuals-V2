@@ -11,10 +11,12 @@ from services.data_source import (
     parse_time as _parse_time,
 )
 from services.tank_config import (
+    CURRENT_CODES,
     IMBALANCE_THRESHOLD_A,
     JOBS,
     STOP_CURRENT_THRESHOLD_A,
     STOP_DURATION_SECONDS,
+    VOLTAGE_CODES,
     get_node,
 )
 
@@ -60,20 +62,21 @@ def _get_measurement_type_map():
     return {row["id"]: row for row in rows}
 
 
-def _build_series(rows, sensors, measurement_types, code, group_mode):
+def _build_series(rows, sensors, measurement_types, codes, group_mode):
     grouped = defaultdict(list)
     sensor_lookup = {sensor.get("id"): sensor for sensor in sensors if sensor.get("id")}
 
     for row in rows:
         measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
-        if measurement_type.get("code") != code:
+        code = measurement_type.get("code")
+        if code not in codes:
             continue
 
         parsed_time = _parse_time(row.get("time"))
         value = _parse_float(row.get("value_num"))
         if parsed_time is None or value is None:
             continue
-        if code in ("current_measured", "voltage_measured"):
+        if code in CURRENT_CODES or code in VOLTAGE_CODES:
             # measurements are in milli-units in CSV; convert to A / V
             value = value / 1000.0
 
@@ -311,7 +314,7 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
     current_counts = defaultdict(int)
     for row in rows:
         measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
-        if measurement_type.get("code") != "current_measured":
+        if measurement_type.get("code") not in CURRENT_CODES:
             continue
         sensor_id = row.get("sensor_id")
         if sensor_id:
@@ -354,7 +357,7 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 continue
 
             measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
-            if measurement_type.get("code") != "current_measured":
+            if measurement_type.get("code") not in CURRENT_CODES:
                 continue
 
             parsed_time = _parse_time(row.get("time"))
@@ -498,12 +501,13 @@ def get_dashboard_payload():
             if tank not in tank_last_seen or parsed_time > tank_last_seen[tank]:
                 tank_last_seen[tank] = parsed_time
 
-        if code in {"current_measured", "voltage_measured"}:
+        if code in CURRENT_CODES or code in VOLTAGE_CODES:
             value = _parse_float(row.get("value_num"))
             if value is not None:
                 # measurements are in milli-units in CSV; convert to A / V
                 value = value / 1000.0
-                tank_stats[tank][code].append(value)
+                key = "current_measured" if code in CURRENT_CODES else "voltage_measured"
+                tank_stats[tank][key].append(value)
 
         if code in PROCESS_CODES and parsed_time:
             code_key = (tank, code)
@@ -565,7 +569,7 @@ def get_dashboard_payload():
                                 "value": (_parse_float(row.get("value_num")) / 1000.0) if _parse_float(row.get("value_num")) is not None else None,
                             }
                             for row in measurements
-                            if measurement_types.get(row.get("measurement_type_id"), {}).get("code") == "current_measured"
+                            if measurement_types.get(row.get("measurement_type_id"), {}).get("code") in CURRENT_CODES
                             and row.get("sensor_id") == sensor_id
                             and _parse_time(row.get("time")) is not None
                             and _parse_float(row.get("value_num")) is not None
@@ -577,14 +581,14 @@ def get_dashboard_payload():
         ],
         "live_charts": {
             "by_tank": {
-                "current": _build_series(measurements, sensors, measurement_types, "current_measured", "tank"),
-                "voltage": _build_series(measurements, sensors, measurement_types, "voltage_measured", "tank"),
+                "current": _build_series(measurements, sensors, measurement_types, CURRENT_CODES, "tank"),
+                "voltage": _build_series(measurements, sensors, measurement_types, VOLTAGE_CODES, "tank"),
             },
             "by_automation": {
-                "current": _build_series(measurements, sensors, measurement_types, "current_measured", "automation"),
+                "current": _build_series(measurements, sensors, measurement_types, CURRENT_CODES, "automation"),
             },
             "by_sensor": {
-                "current": _build_series(measurements, sensors, measurement_types, "current_measured", "sensor"),
+                "current": _build_series(measurements, sensors, measurement_types, CURRENT_CODES, "sensor"),
             },
             "per_tank": per_tank_view,
         },
