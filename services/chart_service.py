@@ -12,6 +12,7 @@ from services.data_source import (
 )
 from services.tank_config import (
     CURRENT_CODES,
+    CURRENT_SETPOINT_CODE,
     IMBALANCE_THRESHOLD_A,
     JOBS,
     STOP_CURRENT_THRESHOLD_A,
@@ -309,6 +310,26 @@ def _select_tank_sensors(tank_sensors):
     return selected[:4]
 
 
+def _latest_setpoint(rows, measurement_types, sensor_ids):
+    """Latest current_setpoint value (A) reported by any of the given sensors."""
+    latest_time = None
+    latest_value = None
+    for row in rows:
+        if row.get("sensor_id") not in sensor_ids:
+            continue
+        measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
+        if measurement_type.get("code") != CURRENT_SETPOINT_CODE:
+            continue
+        parsed_time = _parse_time(row.get("time"))
+        value = _parse_float(row.get("value_num"))
+        if parsed_time is None or value is None:
+            continue
+        if latest_time is None or parsed_time > latest_time:
+            latest_time = parsed_time
+            latest_value = value / 1000.0
+    return latest_value
+
+
 def _build_tank_sensor_view(rows, sensors, measurement_types):
     # Count current measurement coverage per sensor so we can prioritize the sensors that have data.
     current_counts = defaultdict(int)
@@ -327,6 +348,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         tank_sensors = [sensor for sensor in sensors if (sensor.get("tank") or "") == tank and sensor.get("id")]
         if not tank_sensors:
             continue
+
+        setpoint_total = _latest_setpoint(rows, measurement_types, {s["id"] for s in tank_sensors})
 
         automation = next((sensor for sensor in tank_sensors if (sensor.get("name") or "").lower().startswith("auto")), None)
         manual_sensors = [sensor for sensor in tank_sensors if not (sensor.get("name") or "").lower().startswith("auto")]
@@ -454,6 +477,15 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 "job": job,
                 "sensors_reporting": sensors_reporting,
                 "sensors_total": len(selected_sensors),
+                "setpoint": {
+                    "total": round(setpoint_total, 2) if setpoint_total is not None else None,
+                    # Expected setpoint per currently-reporting sensor, rather than the raw
+                    # automate-wide total, so it can be compared directly to individual
+                    # sensor readings on the chart.
+                    "per_sensor": round(setpoint_total / sensors_reporting, 2)
+                    if setpoint_total is not None and sensors_reporting > 0
+                    else None,
+                },
             }
         )
 

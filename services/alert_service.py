@@ -9,7 +9,14 @@ from services.data_source import (
     parse_float as _parse_float,
     parse_time as _parse_time,
 )
-from services.tank_config import CURRENT_CODES, IMBALANCE_THRESHOLD_A, PH_MAX, PH_MEASUREMENT_CODE, PH_MIN
+from services.tank_config import (
+    CURRENT_CODES,
+    IMBALANCE_THRESHOLD_A,
+    PH_MAX,
+    PH_MEASUREMENT_CODE,
+    PH_MIN,
+    SENSOR_STALE_SECONDS,
+)
 
 
 def get_alerts(threshold_current=4.7):
@@ -62,12 +69,12 @@ def get_alerts(threshold_current=4.7):
                 "value": round(avg, 2),
             })
 
-    # Sensors without recent data (last seen more than 10 seconds ago)
+    # Sensors without recent data (last seen more than SENSOR_STALE_SECONDS ago)
     now = datetime.now()
     for s in sensors:
         sid = s.get("id")
         ls = last_seen.get(sid)
-        if ls is None or (now - ls).total_seconds() > 20:
+        if ls is None or (now - ls).total_seconds() > SENSOR_STALE_SECONDS:
             alerts.append({
                 "sensor": s.get("name") or sid,
                 "tank": s.get("tank"),

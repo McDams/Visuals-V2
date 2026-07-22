@@ -16,17 +16,32 @@ NODE_MAP = {
     "KS4": {"3": "left", "7": "left", "1": "right", "2": "right"},
 }
 
-# Measurement type codes that carry a current / voltage value. Per measurement_types'
-# descriptions, "current_measured"/"voltage_measured" are automaton-specific, while the
-# individual node sensors report under the generic "current"/"voltage" codes — both must be
-# accepted everywhere or per-sensor readings are silently dropped.
+# Measurement type codes that carry a current value. Per measurement_types' descriptions,
+# "current_measured" is automaton-specific while individual node sensors report under the
+# generic "current" code ("sensor supplied") — both must be accepted or per-sensor readings
+# are silently dropped.
 CURRENT_CODES = {"current", "current_measured"}
-VOLTAGE_CODES = {"voltage", "voltage_measured"}
+
+# Voltage only has an automaton-reported code in the current schema: "voltage" ("Voltage from
+# automaton if available") and "voltage_measured" ("Voltage measured automaton") are both
+# automaton-only, and are NOT interchangeable like the current codes — "voltage" can carry a
+# different, occasionally negative, raw/setpoint-like value. Only "voltage_measured" is a true
+# measurement, so it is the only one used everywhere a "voltage" is displayed.
+VOLTAGE_CODES = {"voltage_measured"}
+
+# Measurement type code for the automaton's target current (used to derive an expected
+# per-sensor setpoint = total setpoint / number of sensors currently reporting data).
+CURRENT_SETPOINT_CODE = "current_setpoint"
 
 # A tank/node is considered stopped once its current has stayed below this threshold for
 # longer than STOP_DURATION_SECONDS.
 STOP_CURRENT_THRESHOLD_A = 10.0
 STOP_DURATION_SECONDS = 60
+
+# A sensor is flagged with a "Pas de données récentes" alert once its last reading is older
+# than this. Tune it to your real sensors' reporting interval plus some margin for network/
+# polling jitter — too tight and healthy sensors will false-positive on every normal delay.
+SENSOR_STALE_SECONDS = 60
 
 # Alert threshold for current imbalance between sensors of the same tank.
 IMBALANCE_THRESHOLD_A = 5.0

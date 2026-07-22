@@ -5,6 +5,9 @@ const AUTOMATE_COLOR = '#f472b6';
 // Fixed current axis (A) shared by every tank chart. Keep in sync with
 // services/tank_config.py CHART_CURRENT_AXIS_MAX.
 const CURRENT_AXIS_MAX = 220;
+// A "last seen" timestamp older than this is flagged stale in the UI. Keep in sync with
+// services/tank_config.py SENSOR_STALE_SECONDS.
+const STALE_MS = 60000;
 
 const STATUS_LABELS = {
   en_cours: 'En cours',
@@ -337,7 +340,7 @@ function renderTankTable() {
           : '<span class="muted">--</span>';
 
       const lastSeenMs = view.last_seen ? new Date(view.last_seen).getTime() : NaN;
-      const isStale = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs > 20000;
+      const isStale = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs > STALE_MS;
 
       return `
       <tr class="tank-row${hasMajor ? ' tank-row--alert' : ''}" data-tank="${view.tank}" tabindex="0">
@@ -357,7 +360,7 @@ function renderTankTable() {
             ${hasProblem ? `<span class="alert-dot-count alert-dot-count--problem">${tankAlerts.length}</span>` : ''}
           </div>
         </td>
-        <td class="sparkline-cell"><canvas id="spark-${view.tank}"></canvas></td>
+        <td class="sparkline-cell">${view.status === 'arret' ? '<span class="muted">À l\'arrêt</span>' : `<canvas id="spark-${view.tank}"></canvas>`}</td>
         <td class="tabular">${stats.latest_current ?? '--'} A<br /><span class="muted">${stats.latest_voltage ?? '--'} V</span></td>
         <td class="tabular">${nodeCell(view.nodes?.left)}</td>
         <td class="tabular">${nodeCell(view.nodes?.right)}</td>
@@ -370,6 +373,7 @@ function renderTankTable() {
     .join('');
 
   state.tankViews.forEach((view) => {
+    if (view.status === 'arret') return;
     const visual = statusVisual(view, state.alerts);
     const color = visual === 'critical' ? '#f87171' : visual === 'warn' ? '#fbbf24' : '#22d3ee';
     renderSparkline(`spark-${view.tank}`, primarySeriesFor(view), color);
@@ -408,12 +412,12 @@ function renderTankModal() {
   const stats = statsByTank[view.tank] || {};
   const visual = statusVisual(view, state.alerts);
   const statusLabel = STATUS_LABELS[view.status] || 'Inconnu';
-  const hasData = (view.series || []).some((s) => s.points.length > 0);
+  const hasData = view.status !== 'arret' && (view.series || []).some((s) => s.points.length > 0);
   const process = view.process || {};
   const nodesHtml = `<div class="tank-nodes">${renderNodeTable('Noeud Gauche', view.nodes?.left)}${renderNodeTable('Noeud Droite', view.nodes?.right)}</div>`;
 
   const lastSeenMs = view.last_seen ? new Date(view.last_seen).getTime() : NaN;
-  const isStale = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs > 20000;
+  const isStale = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs > STALE_MS;
   const lastSeenHtml = view.last_seen
     ? `<p class="tank-last-seen${isStale ? ' tank-last-seen--stale' : ''}">Dernière mesure : ${formatDateTime(view.last_seen)}</p>`
     : '<p class="tank-last-seen">Dernière mesure : --</p>';
@@ -472,8 +476,11 @@ function renderTankModal() {
       </div>
       <span class="status-badge status-badge--${visual}">${statusLabel}</span>
     </header>
+    ${view.setpoint?.total != null
+      ? `<p class="modal-setpoint-caption">Consigne automate : ${view.setpoint.total} A · Consigne par capteur actif : ${view.setpoint.per_sensor ?? '--'} A/capteur (${view.sensors_reporting}/${view.sensors_total} capteurs)</p>`
+      : ''}
     <div class="modal-chart">
-      ${hasData ? '<canvas id="tank-modal-chart"></canvas>' : '<div class="tank-empty">Données de courant non disponibles</div>'}
+      ${hasData ? '<canvas id="tank-modal-chart"></canvas>' : `<div class="tank-empty">${view.status === 'arret' ? 'Cuve à l\'arrêt — pas de tendance à afficher' : 'Données de courant non disponibles'}</div>`}
     </div>
     ${nodesHtml}
     ${jobHtml}
@@ -527,6 +534,20 @@ function initTankModalChart(view) {
       yAxisID: isAutomate ? 'y1' : 'y',
     };
   });
+
+  const setpointPerSensor = view.setpoint?.per_sensor;
+  if (setpointPerSensor != null && labels.length) {
+    datasets.push({
+      label: `Consigne (${setpointPerSensor} A/capteur)`,
+      data: labels.map(() => setpointPerSensor),
+      borderColor: '#94a3b8',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [3, 5],
+      pointRadius: 0,
+      yAxisID: 'y',
+    });
+  }
 
   const scales = {
     x: { grid: { display: false }, ticks: { color: '#64748b', maxTicksLimit: 6 } },

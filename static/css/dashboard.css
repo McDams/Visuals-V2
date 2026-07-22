@@ -295,6 +295,8 @@ body {
 .modal-eyebrow { margin: 0; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.72rem; color: var(--muted); }
 .modal-header h2 { margin: 4px 0 2px; font-size: 1.9rem; font-weight: 800; }
 
+.modal-setpoint-caption { margin: -4px 0 0; color: var(--muted); font-size: 0.8rem; }
+
 .modal-chart { height: 340px; }
 .modal-chart canvas { width: 100% !important; height: 100% !important; }
 
