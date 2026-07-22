@@ -27,6 +27,36 @@ const state = {
   openAlertPopoverTank: null,
 };
 
+// ---------- Theme (light/dark) ----------
+function isLightTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'light';
+}
+function chartAxisColor() {
+  return isLightTheme() ? '#475569' : '#64748b';
+}
+function chartGridColor() {
+  return isLightTheme() ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.06)';
+}
+function chartLegendColor() {
+  return isLightTheme() ? '#1e293b' : '#cbd5f5';
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('theme', theme);
+  document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.themeChoice === theme);
+  });
+  // Chart.js bakes colors in at creation time, so re-render anything currently visible.
+  if (state.openTank) renderTankModal();
+  renderTankTable();
+}
+
+document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
+  btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
+});
+applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+
 const ALERT_ICONS = {
   'Arrêt Programmé': '⏸',
   'Écart Ampérage': '⚡',
@@ -550,10 +580,10 @@ function initTankModalChart(view) {
   }
 
   const scales = {
-    x: { grid: { display: false }, ticks: { color: '#64748b', maxTicksLimit: 6 } },
+    x: { grid: { display: false }, ticks: { color: chartAxisColor(), maxTicksLimit: 6 } },
     // Fixed, shared axis (0..CURRENT_AXIS_MAX) so every tank reads at the same scale, and
     // so a large real automate value never squashes the manual sensor lines near zero.
-    y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+    y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: chartAxisColor() }, grid: { color: chartGridColor() } },
   };
   if (hasAutomate) {
     scales.y1 = { position: 'right', min: 0, ticks: { color: AUTOMATE_COLOR }, grid: { display: false } };
@@ -568,7 +598,7 @@ function initTankModalChart(view) {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#cbd5f5', boxWidth: 10, font: { size: 11 } } },
+        legend: { position: 'bottom', labels: { color: chartLegendColor(), boxWidth: 10, font: { size: 11 } } },
         tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.formattedValue} A` } },
       },
       scales,
