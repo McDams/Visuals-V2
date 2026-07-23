@@ -71,10 +71,18 @@
             <span class="panel-sub" id="table-subtitle">Chargement...</span>
           </div>
         </div>
+        <div class="compare-bar" id="compare-bar" hidden>
+          <span id="compare-count">0 cuve(s) sélectionnée(s)</span>
+          <div class="compare-bar-actions">
+            <button type="button" id="compare-clear-btn">Effacer</button>
+            <button type="button" id="compare-open-btn">Comparer</button>
+          </div>
+        </div>
         <div class="table-scroll">
           <table class="tank-table">
             <thead>
               <tr>
+                <th class="select-cell"><input type="checkbox" id="select-all-tanks" aria-label="Sélectionner toutes les cuves" /></th>
                 <th>Cuve</th>
                 <th>Statut</th>
                 <th>Alerte</th>
@@ -89,7 +97,7 @@
               </tr>
             </thead>
             <tbody id="tank-table-body">
-              <tr><td colspan="11" class="muted table-empty">Chargement des cuves...</td></tr>
+              <tr><td colspan="12" class="muted table-empty">Chargement des cuves...</td></tr>
             </tbody>
           </table>
         </div>
@@ -97,7 +105,7 @@
     </div>
 
     <div class="modal-backdrop" id="tank-modal-backdrop" hidden>
-      <div class="tank-modal" role="dialog" aria-modal="true" aria-labelledby="tank-modal-title">
+      <div class="tank-modal" role="dialog" aria-modal="true" aria-label="Détail des cuves">
         <button class="modal-close" id="tank-modal-close" type="button" aria-label="Fermer">&times;</button>
         <div id="tank-modal-body"></div>
       </div>

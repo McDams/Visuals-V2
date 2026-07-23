@@ -99,23 +99,27 @@ def load_measurement_types():
     return rows
 
 
-def load_measurements():
+def load_measurements(window_minutes=None):
     """Return recent measurements as a list of dicts (matches CSV shape).
 
-    In Postgres mode, only the last REALTIME_WINDOW_MINUTES minutes are fetched so the
-    dashboard reflects live production data instead of the entire measurements table.
+    In Postgres mode, only the last `window_minutes` (REALTIME_WINDOW_MINUTES by default)
+    are fetched so the live dashboard reflects recent production data instead of the entire
+    measurements table. Pass an explicit `window_minutes` to fetch a wider one-off range
+    (e.g. multi-hour chart history) without changing the default live-polling window.
     """
     if not USE_POSTGRES:
         return _load_csv("measurements.csv")
 
+    minutes = REALTIME_WINDOW_MINUTES if window_minutes is None else window_minutes
     rows = _query(
         """
         SELECT time, sensor_id, measurement_type_id, statistic_id, value_num, internal_count
         FROM measurements
         WHERE time > now() - (%s * interval '1 minute')
         ORDER BY time DESC
+        LIMIT 50000
         """,
-        (REALTIME_WINDOW_MINUTES,),
+        (minutes,),
     )
     for row in rows:
         row["time"] = row["time"].isoformat() if row.get("time") is not None else None

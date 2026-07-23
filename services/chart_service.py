@@ -330,17 +330,51 @@ def _latest_setpoint(rows, measurement_types, sensor_ids):
     return latest_value
 
 
-def _build_tank_sensor_view(rows, sensors, measurement_types):
-    # Count current measurement coverage per sensor so we can prioritize the sensors that have data.
-    current_counts = defaultdict(int)
+def _current_counts(rows, measurement_types):
+    """How many current rows each sensor reported, used to prioritize sensors with data
+    when a tank has no NODE_MAP entry to fall back on."""
+    counts = defaultdict(int)
     for row in rows:
         measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
         if measurement_type.get("code") not in CURRENT_CODES:
             continue
         sensor_id = row.get("sensor_id")
         if sensor_id:
-            current_counts[sensor_id] += 1
+            counts[sensor_id] += 1
+    return counts
 
+
+def _resolve_tank_sensors(tank, sensors, current_counts):
+    """Pick the automate (if any) and up to 4 manual sensors representing this tank,
+    preferring the physical left/right NODE_MAP order over raw data coverage."""
+    tank_sensors = [sensor for sensor in sensors if (sensor.get("tank") or "") == tank and sensor.get("id")]
+    if not tank_sensors:
+        return None, []
+
+    automation = next((sensor for sensor in tank_sensors if (sensor.get("name") or "").lower().startswith("auto")), None)
+    manual_sensors = [sensor for sensor in tank_sensors if not (sensor.get("name") or "").lower().startswith("auto")]
+
+    node_mapped = [sensor for sensor in manual_sensors if get_node(tank, sensor)]
+    if node_mapped:
+        selected_sensors = sorted(
+            node_mapped,
+            key=lambda sensor: (get_node(tank, sensor), sensor.get("name") or ""),
+        )[:4]
+    else:
+        selected_sensors = sorted(
+            manual_sensors,
+            key=lambda sensor: (
+                -current_counts.get(sensor["id"], 0),
+                int(sensor.get("display_order")) if sensor.get("display_order") and sensor.get("display_order").isdigit() else 0,
+                sensor.get("name") or sensor.get("id") or "",
+            ),
+        )[:4]
+
+    return automation, selected_sensors
+
+
+def _build_tank_sensor_view(rows, sensors, measurement_types):
+    current_counts = _current_counts(rows, measurement_types)
     tanks = sorted({sensor.get("tank") for sensor in sensors if sensor.get("tank")})
     view = []
 
@@ -350,25 +384,7 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             continue
 
         setpoint_total = _latest_setpoint(rows, measurement_types, {s["id"] for s in tank_sensors})
-
-        automation = next((sensor for sensor in tank_sensors if (sensor.get("name") or "").lower().startswith("auto")), None)
-        manual_sensors = [sensor for sensor in tank_sensors if not (sensor.get("name") or "").lower().startswith("auto")]
-
-        node_mapped = [sensor for sensor in manual_sensors if get_node(tank, sensor)]
-        if node_mapped:
-            selected_sensors = sorted(
-                node_mapped,
-                key=lambda sensor: (get_node(tank, sensor), sensor.get("name") or ""),
-            )[:4]
-        else:
-            selected_sensors = sorted(
-                manual_sensors,
-                key=lambda sensor: (
-                    -current_counts.get(sensor["id"], 0),
-                    int(sensor.get("display_order")) if sensor.get("display_order") and sensor.get("display_order").isdigit() else 0,
-                    sensor.get("name") or sensor.get("id") or "",
-                ),
-            )[:4]
+        automation, selected_sensors = _resolve_tank_sensors(tank, sensors, current_counts)
 
         series_map = {sensor["id"]: [] for sensor in selected_sensors}
         if automation:
@@ -499,6 +515,67 @@ def get_tank_views():
     sensors = load_sensors()
     measurements = load_measurements()
     return _build_tank_sensor_view(measurements, sensors, measurement_types)
+
+
+def get_tank_history(tank, hours):
+    """Chart series for one tank over a wider, caller-chosen window (e.g. 6h/24h), decoupled
+    from the live dashboard's short REALTIME_WINDOW_MINUTES so browsing history doesn't slow
+    down the main polling loop. Points carry full ISO timestamps (not HH:MM:SS) since a
+    multi-hour range can span midnight. No synthetic fallback: a silent sensor just shows a
+    gap, real history shouldn't be padded with fake data.
+    """
+    measurement_types = _get_measurement_type_map()
+    sensors = load_sensors()
+    measurements = load_measurements(window_minutes=int(hours * 60))
+
+    current_counts = _current_counts(measurements, measurement_types)
+    automation, selected_sensors = _resolve_tank_sensors(tank, sensors, current_counts)
+    if not selected_sensors and not automation:
+        return None
+
+    sensor_ids = {s["id"] for s in selected_sensors}
+    if automation:
+        sensor_ids.add(automation["id"])
+
+    series_map = defaultdict(list)
+    for row in measurements:
+        sensor_id = row.get("sensor_id")
+        if sensor_id not in sensor_ids:
+            continue
+        measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
+        if measurement_type.get("code") not in CURRENT_CODES:
+            continue
+        parsed_time = _parse_time(row.get("time"))
+        value = _parse_float(row.get("value_num"))
+        if parsed_time is None or value is None:
+            continue
+        series_map[sensor_id].append({"time": parsed_time, "value": round(value / 1000.0, 2)})
+
+    for sensor_id in series_map:
+        series_map[sensor_id] = sorted(series_map[sensor_id], key=lambda item: item["time"])
+
+    def _points(sensor_id):
+        return [{"time": item["time"].isoformat(), "value": item["value"]} for item in series_map.get(sensor_id, [])]
+
+    series = [
+        {"label": sensor.get("name") or sensor.get("id") or "Capteur inconnu", "points": _points(sensor["id"])}
+        for sensor in selected_sensors
+    ]
+    if automation:
+        series.append(
+            {
+                "label": automation.get("name") or "Automate",
+                "isAutomate": True,
+                "points": _points(automation["id"]),
+            }
+        )
+
+    return {
+        "tank": tank,
+        "hours": hours,
+        "automation": automation.get("name") if automation else None,
+        "series": series,
+    }
 
 
 def get_dashboard_payload():

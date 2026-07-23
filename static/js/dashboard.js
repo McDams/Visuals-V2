@@ -35,8 +35,16 @@ const state = {
   tankViews: [],
   tankStats: [],
   alerts: [],
-  openTank: null,
+  openTanks: [],
   openAlertPopoverTank: null,
+  // Checkboxes selected in the table, offered to "Comparer" into a multi-tank modal.
+  compareTanks: new Set(),
+  // Chart period per open tank: 'live' (uses the already-loaded real-time series) or '6'/'24'
+  // (hours, fetched on demand from /api/tank/<tank>/history).
+  chartPeriod: new Map(),
+  // Last-fetched history payload per tank, so the periodic 5s refresh redraws from cache
+  // instead of re-fetching a wide window every cycle.
+  historyData: new Map(),
 };
 
 // ---------- Theme (light/dark) ----------
@@ -60,7 +68,7 @@ function applyTheme(theme) {
     btn.classList.toggle('is-active', btn.dataset.themeChoice === theme);
   });
   // Chart.js bakes colors in at creation time, so re-render anything currently visible.
-  if (state.openTank) renderTankModal();
+  if (state.openTanks.length) renderTankModal();
   renderTankTable();
 }
 
@@ -212,7 +220,7 @@ async function loadDashboard() {
     renderAlertTicker(state.alerts);
     renderTankTable();
 
-    if (state.openTank) renderTankModal();
+    if (state.openTanks.length) renderTankModal();
     if (state.openAlertPopoverTank) refreshAlertPopover();
 
     setConnectionStatus(true);
@@ -352,7 +360,8 @@ function renderTankTable() {
   setText('table-subtitle', state.tankViews.length ? `${state.tankViews.length} cuve(s) suivie(s) · cliquez une ligne pour le détail` : 'Aucune cuve');
 
   if (state.tankViews.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="muted table-empty">Aucune cuve disponible.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="muted table-empty">Aucune cuve disponible.</td></tr>';
+    renderCompareBar();
     return;
   }
 
@@ -391,6 +400,7 @@ function renderTankTable() {
 
       return `
       <tr class="tank-row${hasMajor ? ' tank-row--alert' : ''}" data-tank="${view.tank}" tabindex="0">
+        <td class="select-cell"><input type="checkbox" class="tank-select" data-tank="${view.tank}" aria-label="Sélectionner ${view.tank}"${state.compareTanks.has(view.tank) ? ' checked' : ''} /></td>
         <td>
           <div class="tank-row-name">
             <span class="row-status-dot row-status-dot--${visual}"></span>
@@ -425,11 +435,28 @@ function renderTankTable() {
     const color = visual === 'critical' ? cssVar('--critical') : visual === 'warn' ? cssVar('--warn') : cssVar('--accent-2');
     renderSparkline(`spark-${view.tank}`, primarySeriesFor(view), color);
   });
+
+  const selectAll = document.getElementById('select-all-tanks');
+  if (selectAll) selectAll.checked = state.tankViews.every((v) => state.compareTanks.has(v.tank));
+
+  renderCompareBar();
 }
 
-function openTankModal(tank) {
-  if (!tank) return;
-  state.openTank = tank;
+function renderCompareBar() {
+  const bar = document.getElementById('compare-bar');
+  if (!bar) return;
+  const count = state.compareTanks.size;
+  bar.hidden = count === 0;
+  if (count > 0) setText('compare-count', `${count} cuve(s) sélectionnée(s)`);
+}
+
+function openTankModal(tanks) {
+  const list = (Array.isArray(tanks) ? tanks : [tanks]).filter(Boolean);
+  if (!list.length) return;
+  state.openTanks = list;
+  list.forEach((tank) => {
+    if (!state.chartPeriod.has(tank)) state.chartPeriod.set(tank, 'live');
+  });
   renderTankModal();
   const backdrop = document.getElementById('tank-modal-backdrop');
   if (backdrop) backdrop.hidden = false;
@@ -437,30 +464,77 @@ function openTankModal(tank) {
 }
 
 function closeTankModal() {
-  state.openTank = null;
+  state.openTanks.forEach((tank) => {
+    const id = `tank-modal-chart-${tank}`;
+    chartInstances[id]?.destroy();
+    delete chartInstances[id];
+  });
+  state.openTanks = [];
   const backdrop = document.getElementById('tank-modal-backdrop');
   if (backdrop) backdrop.hidden = true;
   document.body.classList.remove('modal-open');
-  chartInstances['tank-modal-chart']?.destroy();
-  delete chartInstances['tank-modal-chart'];
+}
+
+function removeTankFromModal(tank) {
+  state.openTanks = state.openTanks.filter((t) => t !== tank);
+  state.compareTanks.delete(tank);
+  const id = `tank-modal-chart-${tank}`;
+  chartInstances[id]?.destroy();
+  delete chartInstances[id];
+  if (!state.openTanks.length) {
+    closeTankModal();
+  } else {
+    renderTankModal();
+  }
+  renderTankTable();
 }
 
 function renderTankModal() {
   const body = document.getElementById('tank-modal-body');
-  if (!body || !state.openTank) return;
+  const modal = document.querySelector('.tank-modal');
+  if (!body) return;
 
-  const view = state.tankViews.find((v) => v.tank === state.openTank);
-  if (!view) {
+  const validTanks = state.openTanks.filter((t) => state.tankViews.some((v) => v.tank === t));
+  if (!validTanks.length) {
     closeTankModal();
     return;
   }
+  state.openTanks = validTanks;
+
+  const multi = state.openTanks.length > 1;
+  if (modal) modal.classList.toggle('tank-modal--wide', multi);
 
   const statsByTank = Object.fromEntries(state.tankStats.map((t) => [t.tank, t]));
-  const stats = statsByTank[view.tank] || {};
+
+  const plans = state.openTanks.map((tank) => {
+    const view = state.tankViews.find((v) => v.tank === tank);
+    const stats = statsByTank[tank] || {};
+    const period = state.chartPeriod.get(tank) || 'live';
+    const cachedHistory = period !== 'live' ? state.historyData.get(tank) : null;
+    return { tank, view, stats, period, cachedHistory, multi };
+  });
+
+  body.innerHTML = `
+    ${multi ? `<p class="modal-compare-title">Comparaison de ${state.openTanks.length} cuves</p>` : ''}
+    <div class="modal-tanks-grid${multi ? ' modal-tanks-grid--multi' : ''}">${plans.map(tankDetailBlockHtml).join('')}</div>
+  `;
+
+  plans.forEach((plan) => {
+    const canvasId = `tank-modal-chart-${plan.tank}`;
+    const hasLiveData = plan.view.status !== 'arret' && (plan.view.series || []).some((s) => s.points.length > 0);
+    if (plan.period === 'live') {
+      if (hasLiveData) initTankModalChart(plan.view, canvasId);
+    } else if (plan.cachedHistory && String(plan.cachedHistory.hours) === plan.period) {
+      initHistoryChart(plan.cachedHistory, canvasId);
+    } else {
+      loadAndRenderHistory(plan.tank, plan.period, canvasId);
+    }
+  });
+}
+
+function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }) {
   const visual = statusVisual(view, state.alerts);
   const statusLabel = STATUS_LABELS[view.status] || 'Inconnu';
-  const hasData = view.status !== 'arret' && (view.series || []).some((s) => s.points.length > 0);
-  const process = view.process || {};
   const nodesHtml = `<div class="tank-nodes">${renderNodeTable('Noeud Gauche', view.nodes?.left)}${renderNodeTable('Noeud Droite', view.nodes?.right)}</div>`;
 
   const lastSeenMs = view.last_seen ? new Date(view.last_seen).getTime() : NaN;
@@ -469,6 +543,7 @@ function renderTankModal() {
     ? `<p class="tank-last-seen${isStale ? ' tank-last-seen--stale' : ''}">Dernière mesure : ${formatDateTime(view.last_seen)}</p>`
     : '<p class="tank-last-seen">Dernière mesure : --</p>';
 
+  const process = view.process || {};
   const processHtml =
     process.recipe_number != null || process.segment_number != null
       ? `
@@ -513,47 +588,88 @@ function renderTankModal() {
       <div class="modal-alerts">${relatedAlerts.map((a) => alertItemHtml(a)).join('')}</div>`
     : '';
 
-  body.innerHTML = `
-    <header class="modal-header">
-      <div>
-        <p class="modal-eyebrow">Cuve</p>
-        <h2 id="tank-modal-title">${view.tank}</h2>
-        <p class="tank-automation">${view.automation || 'Aucun automate associé'}</p>
-        ${lastSeenHtml}
-      </div>
-      <span class="status-badge status-badge--${visual}">${statusLabel}</span>
-    </header>
-    ${view.setpoint?.total != null
-      ? `<p class="modal-setpoint-caption">Consigne automate : ${view.setpoint.total} A · Consigne par capteur actif : ${view.setpoint.per_sensor ?? '--'} A/capteur (${view.sensors_reporting}/${view.sensors_total} capteurs)</p>`
-      : ''}
-    <div class="modal-chart">
-      ${hasData ? '<canvas id="tank-modal-chart"></canvas>' : `<div class="tank-empty">${view.status === 'arret' ? 'Cuve à l\'arrêt — pas de tendance à afficher' : 'Données de courant non disponibles'}</div>`}
-    </div>
-    ${nodesHtml}
-    ${jobHtml}
-    ${processHtml}
-    <footer class="tank-card-footer">
-      <div class="tank-stat">
-        <span class="tank-stat-label">Courant actuel</span>
-        <span class="tank-stat-value">${stats.latest_current ?? '--'} A</span>
-      </div>
-      <div class="tank-stat">
-        <span class="tank-stat-label">Tension actuelle</span>
-        <span class="tank-stat-value">${stats.latest_voltage ?? '--'} V</span>
-      </div>
-      <div class="tank-stat">
-        <span class="tank-stat-label">Capteurs actifs</span>
-        <span class="tank-stat-value${view.sensors_reporting < view.sensors_total ? ' tank-stat-value--warn' : ''}">${view.sensors_reporting} / ${view.sensors_total}</span>
-      </div>
-    </footer>
-    ${alertsHtml}
-  `;
+  const canvasId = `tank-modal-chart-${tank}`;
+  const hasLiveData = view.status !== 'arret' && (view.series || []).some((s) => s.points.length > 0);
+  const showLoadingPlaceholder = period !== 'live' && !cachedHistory;
+  const chartInner = showLoadingPlaceholder
+    ? `<div class="tank-empty">Chargement de l'historique (${period}h)...</div>`
+    : period === 'live' && !hasLiveData
+      ? `<div class="tank-empty">${view.status === 'arret' ? 'Cuve à l\'arrêt — pas de tendance à afficher' : 'Données de courant non disponibles'}</div>`
+      : `<canvas id="${canvasId}"></canvas>`;
 
-  if (hasData) initTankModalChart(view);
+  const periodSelectorHtml = `
+    <div class="chart-period" data-tank="${tank}">
+      <button type="button" class="chart-period-btn${period === 'live' ? ' is-active' : ''}" data-period="live">Direct</button>
+      <button type="button" class="chart-period-btn${period === '6' ? ' is-active' : ''}" data-period="6">6h</button>
+      <button type="button" class="chart-period-btn${period === '24' ? ' is-active' : ''}" data-period="24">24h</button>
+    </div>`;
+
+  return `
+    <article class="modal-tank-block">
+      <header class="modal-header">
+        <div>
+          <p class="modal-eyebrow">Cuve</p>
+          <h2>${tank}</h2>
+          <p class="tank-automation">${view.automation || 'Aucun automate associé'}</p>
+          ${lastSeenHtml}
+        </div>
+        <div class="modal-header-actions">
+          <span class="status-badge status-badge--${visual}">${statusLabel}</span>
+          ${multi ? `<button type="button" class="modal-tank-remove" data-remove-tank="${tank}" aria-label="Retirer ${tank}">&times;</button>` : ''}
+        </div>
+      </header>
+      ${view.setpoint?.total != null
+        ? `<p class="modal-setpoint-caption">Consigne automate : ${view.setpoint.total} A · Consigne par capteur actif : ${view.setpoint.per_sensor ?? '--'} A/capteur (${view.sensors_reporting}/${view.sensors_total} capteurs)</p>`
+        : ''}
+      <div class="modal-chart-wrap">
+        ${periodSelectorHtml}
+        <div class="modal-chart">${chartInner}</div>
+      </div>
+      ${nodesHtml}
+      ${jobHtml}
+      ${processHtml}
+      <footer class="tank-card-footer">
+        <div class="tank-stat">
+          <span class="tank-stat-label">Courant actuel</span>
+          <span class="tank-stat-value">${stats.latest_current ?? '--'} A</span>
+        </div>
+        <div class="tank-stat">
+          <span class="tank-stat-label">Tension actuelle</span>
+          <span class="tank-stat-value">${stats.latest_voltage ?? '--'} V</span>
+        </div>
+        <div class="tank-stat">
+          <span class="tank-stat-label">Capteurs actifs</span>
+          <span class="tank-stat-value${view.sensors_reporting < view.sensors_total ? ' tank-stat-value--warn' : ''}">${view.sensors_reporting} / ${view.sensors_total}</span>
+        </div>
+      </footer>
+      ${alertsHtml}
+    </article>`;
 }
 
-function initTankModalChart(view) {
-  const canvas = document.getElementById('tank-modal-chart');
+async function loadAndRenderHistory(tank, hours, canvasId) {
+  try {
+    const resp = await fetch(`/api/tank/${encodeURIComponent(tank)}/history?hours=${hours}`);
+    if (!resp.ok) throw new Error('HTTP error');
+    const history = await resp.json();
+    state.historyData.set(tank, history);
+    // The period/tank selection may have changed while the request was in flight.
+    if (state.chartPeriod.get(tank) !== String(hours) || !state.openTanks.includes(tank)) return;
+    if (!document.getElementById(canvasId)) {
+      // The block was rebuilt (e.g. by the 5s poll) while loading; re-render now that the
+      // history is cached so the chart appears instead of staying on the loading placeholder.
+      renderTankModal();
+      return;
+    }
+    initHistoryChart(history, canvasId);
+  } catch (err) {
+    console.warn("Erreur de chargement de l'historique", err);
+    const wrap = document.getElementById(canvasId)?.closest('.modal-chart');
+    if (wrap) wrap.innerHTML = "<div class=\"tank-empty\">Impossible de charger l'historique.</div>";
+  }
+}
+
+function initTankModalChart(view, canvasId) {
+  const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
   const labels = Array.from(new Set((view.series || []).flatMap((s) => s.points.map((p) => p.time)))).sort((a, b) => {
@@ -589,10 +705,12 @@ function initTankModalChart(view) {
     datasets.push({
       label: `Consigne (${setpointPerSensor} A/capteur)`,
       data: labels.map(() => setpointPerSensor),
-      borderColor: cssVar('--muted'),
+      // Full-contrast foreground color + thick long dashes so the target line reads
+      // unmistakably as a reference threshold, distinct from the softer data-line palette.
+      borderColor: cssVar('--text'),
       backgroundColor: 'transparent',
-      borderWidth: 1.5,
-      borderDash: [3, 5],
+      borderWidth: 2.5,
+      borderDash: [10, 6],
       pointRadius: 0,
       yAxisID: 'y',
     });
@@ -608,10 +726,73 @@ function initTankModalChart(view) {
     scales.y1 = { position: 'right', min: 0, ticks: { color: automateColor }, grid: { display: false } };
   }
 
-  chartInstances['tank-modal-chart']?.destroy();
-  chartInstances['tank-modal-chart'] = new Chart(canvas, {
+  chartInstances[canvasId]?.destroy();
+  chartInstances[canvasId] = new Chart(canvas, {
     type: 'line',
     data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: chartLegendColor(), boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.formattedValue} A` } },
+      },
+      scales,
+    },
+  });
+}
+
+function initHistoryChart(history, canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !history) return;
+
+  const labels = Array.from(new Set((history.series || []).flatMap((s) => s.points.map((p) => p.time)))).sort(
+    (a, b) => new Date(a).getTime() - new Date(b).getTime()
+  );
+  const spanHours = history.hours || 1;
+  const displayLabels = labels.map((iso) => {
+    const d = new Date(iso);
+    return spanHours > 6
+      ? d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  });
+
+  let sensorIndex = 0;
+  const hasAutomate = (history.series || []).some((s) => s.isAutomate);
+  const sensorPalette = chartSensorPalette();
+  const automateColor = chartAutomateColor();
+  const datasets = (history.series || []).map((series) => {
+    const byTime = Object.fromEntries(series.points.map((p) => [p.time, p.value]));
+    const isAutomate = Boolean(series.isAutomate);
+    const color = isAutomate ? automateColor : sensorPalette[sensorIndex % sensorPalette.length];
+    if (!isAutomate) sensorIndex += 1;
+    return {
+      label: series.label,
+      data: labels.map((t) => byTime[t] ?? null),
+      borderColor: color,
+      backgroundColor: 'transparent',
+      tension: 0.25,
+      pointRadius: 0,
+      borderWidth: isAutomate ? 3 : 2,
+      borderDash: isAutomate ? [6, 4] : undefined,
+      yAxisID: isAutomate ? 'y1' : 'y',
+      spanGaps: true,
+    };
+  });
+
+  const scales = {
+    x: { grid: { display: false }, ticks: { color: chartAxisColor(), maxTicksLimit: 8 } },
+    y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: chartAxisColor() }, grid: { color: chartGridColor() } },
+  };
+  if (hasAutomate) {
+    scales.y1 = { position: 'right', min: 0, ticks: { color: automateColor }, grid: { display: false } };
+  }
+
+  chartInstances[canvasId]?.destroy();
+  chartInstances[canvasId] = new Chart(canvas, {
+    type: 'line',
+    data: { labels: displayLabels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -630,13 +811,24 @@ document.getElementById('tank-modal-backdrop')?.addEventListener('click', (event
   if (event.target.id === 'tank-modal-backdrop') closeTankModal();
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && state.openTank) closeTankModal();
+  if (event.key === 'Escape' && state.openTanks.length) closeTankModal();
 });
 
 // Delegated click handlers: attached once to containers that are never replaced (only their
 // children are re-rendered every poll), so a click always lands on a live listener even if
 // the table/ticker/alerts re-render mid-click.
 document.getElementById('tank-table-body')?.addEventListener('click', (event) => {
+  const checkbox = event.target.closest('.tank-select');
+  if (checkbox) {
+    event.stopPropagation();
+    const tank = checkbox.dataset.tank;
+    if (checkbox.checked) state.compareTanks.add(tank);
+    else state.compareTanks.delete(tank);
+    renderCompareBar();
+    const selectAll = document.getElementById('select-all-tanks');
+    if (selectAll) selectAll.checked = state.tankViews.every((v) => state.compareTanks.has(v.tank));
+    return;
+  }
   const dot = event.target.closest('.alert-dot');
   if (dot) {
     event.stopPropagation();
@@ -662,6 +854,35 @@ document.getElementById('tank-table-body')?.addEventListener('keydown', (event) 
 document.getElementById('alert-ticker-track')?.addEventListener('click', (event) => {
   const item = event.target.closest('.ticker-item--clickable');
   if (item && item.dataset.tank) openTankModal(item.dataset.tank);
+});
+
+document.getElementById('select-all-tanks')?.addEventListener('change', (event) => {
+  if (event.target.checked) state.tankViews.forEach((v) => state.compareTanks.add(v.tank));
+  else state.compareTanks.clear();
+  renderTankTable();
+});
+document.getElementById('compare-clear-btn')?.addEventListener('click', () => {
+  state.compareTanks.clear();
+  renderTankTable();
+});
+document.getElementById('compare-open-btn')?.addEventListener('click', () => {
+  if (state.compareTanks.size) openTankModal(Array.from(state.compareTanks));
+});
+
+document.getElementById('tank-modal-body')?.addEventListener('click', (event) => {
+  const removeBtn = event.target.closest('[data-remove-tank]');
+  if (removeBtn) {
+    removeTankFromModal(removeBtn.dataset.removeTank);
+    return;
+  }
+  const periodBtn = event.target.closest('.chart-period-btn');
+  if (periodBtn) {
+    const tank = periodBtn.closest('.chart-period')?.dataset.tank;
+    if (tank) {
+      state.chartPeriod.set(tank, periodBtn.dataset.period);
+      renderTankModal();
+    }
+  }
 });
 
 document.getElementById('alert-popover-close')?.addEventListener('click', closeAlertPopover);
