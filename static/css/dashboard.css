@@ -430,6 +430,18 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .modal-alerts-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 4px 0 -4px; }
 .modal-alerts { display: grid; gap: 8px; }
 
+/* ---------- Outages (coupures) ---------- */
+.tank-outages {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: 14px; background: rgba(245, 158, 11, 0.05);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+}
+.tank-outages-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.tank-outages-list { display: grid; gap: 2px; max-height: 140px; overflow-y: auto; font-size: 0.82rem; }
+.tank-outage-row { padding: 3px 0; border-top: 1px solid var(--border); }
+.tank-outage-row:first-child { border-top: none; }
+.tank-outages-empty { margin: 0; font-size: 0.82rem; text-align: center; }
+
 /* ---------- Multi-tank comparison ---------- */
 .modal-compare-title { margin: 0 0 -4px; font-size: 1.05rem; font-weight: 700; }
 .modal-tanks-grid { display: grid; gap: 20px; grid-template-columns: 1fr; }

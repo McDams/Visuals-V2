@@ -15,6 +15,7 @@ from services.tank_config import (
     CURRENT_SETPOINT_CODE,
     IMBALANCE_THRESHOLD_A,
     JOBS,
+    OUTAGE_GAP_SECONDS,
     STOP_CURRENT_THRESHOLD_A,
     STOP_DURATION_SECONDS,
     VOLTAGE_CODES,
@@ -449,6 +450,16 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         )
         nodes = _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_real_data)
         sensors_reporting = sum(1 for s in selected_sensors if s["id"] in sensors_with_real_data)
+        # "Active" (current >= STOP_CURRENT_THRESHOLD_A) is stricter than "reporting" (has any
+        # real row): a sensor can be sending data while its node is stopped. Only the active
+        # count should divide the automate's setpoint — e.g. when just one node (2 sensors) is
+        # actually running, the per-sensor setpoint must be total/2, not total/4, even if all 4
+        # sensors are technically still reporting data.
+        sensors_active = sum(
+            1
+            for s in selected_sensors
+            if series_map.get(s["id"]) and series_map[s["id"]][-1]["value"] >= STOP_CURRENT_THRESHOLD_A
+        )
         total_current_series = _sum_series([s["id"] for s in selected_sensors], series_map)
         job = _detect_job(total_current_series)
 
@@ -493,13 +504,14 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 "job": job,
                 "sensors_reporting": sensors_reporting,
                 "sensors_total": len(selected_sensors),
+                "sensors_active": sensors_active,
                 "setpoint": {
                     "total": round(setpoint_total, 2) if setpoint_total is not None else None,
-                    # Expected setpoint per currently-reporting sensor, rather than the raw
-                    # automate-wide total, so it can be compared directly to individual
-                    # sensor readings on the chart.
-                    "per_sensor": round(setpoint_total / sensors_reporting, 2)
-                    if setpoint_total is not None and sensors_reporting > 0
+                    # Expected setpoint per currently-active sensor (current above the stop
+                    # threshold), not per currently-reporting one, so it can be compared
+                    # directly to individual sensor readings on the chart.
+                    "per_sensor": round(setpoint_total / sensors_active, 2)
+                    if setpoint_total is not None and sensors_active > 0
                     else None,
                 },
             }
@@ -517,16 +529,43 @@ def get_tank_views():
     return _build_tank_sensor_view(measurements, sensors, measurement_types)
 
 
+def _detect_outages(series_map, sensor_ids, gap_seconds=OUTAGE_GAP_SECONDS):
+    """Gaps longer than gap_seconds between two consecutive real readings anywhere in the
+    tank's timeline (across any of its sensors), used for the "coupures" KPI."""
+    all_times = sorted({point["time"] for sensor_id in sensor_ids for point in series_map.get(sensor_id, [])})
+    events = []
+    for prev_time, curr_time in zip(all_times, all_times[1:]):
+        delta = (curr_time - prev_time).total_seconds()
+        if delta > gap_seconds:
+            events.append(
+                {
+                    "start": prev_time.isoformat(),
+                    "end": curr_time.isoformat(),
+                    "duration_seconds": round(delta, 1),
+                }
+            )
+    return events
+
+
 def get_tank_history(tank, hours):
     """Chart series for one tank over a wider, caller-chosen window (e.g. 6h/24h), decoupled
     from the live dashboard's short REALTIME_WINDOW_MINUTES so browsing history doesn't slow
     down the main polling loop. Points carry full ISO timestamps (not HH:MM:SS) since a
     multi-hour range can span midnight. No synthetic fallback: a silent sensor just shows a
     gap, real history shouldn't be padded with fake data.
+
+    Measurements are fetched pre-filtered to this tank's own sensors: without that, a wide
+    window (24h) pulls in every sensor across every tank, and the load_measurements() row cap
+    ends up representing only the last few minutes system-wide instead of hours for this tank.
     """
     measurement_types = _get_measurement_type_map()
     sensors = load_sensors()
-    measurements = load_measurements(window_minutes=int(hours * 60))
+
+    tank_sensor_ids = {s["id"] for s in sensors if (s.get("tank") or "") == tank and s.get("id")}
+    if not tank_sensor_ids:
+        return None
+
+    measurements = load_measurements(window_minutes=int(hours * 60), sensor_ids=tank_sensor_ids)
 
     current_counts = _current_counts(measurements, measurement_types)
     automation, selected_sensors = _resolve_tank_sensors(tank, sensors, current_counts)
@@ -570,11 +609,21 @@ def get_tank_history(tank, hours):
             }
         )
 
+    outage_events = _detect_outages(series_map, sensor_ids)
+    outages = {
+        "count": len(outage_events),
+        "avg_duration_seconds": round(sum(e["duration_seconds"] for e in outage_events) / len(outage_events), 1)
+        if outage_events
+        else 0,
+        "events": outage_events[-20:],
+    }
+
     return {
         "tank": tank,
         "hours": hours,
         "automation": automation.get("name") if automation else None,
         "series": series,
+        "outages": outages,
     }
 
 

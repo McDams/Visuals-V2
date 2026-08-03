@@ -43,8 +43,18 @@ STOP_DURATION_SECONDS = 60
 # polling jitter — too tight and healthy sensors will false-positive on every normal delay.
 SENSOR_STALE_SECONDS = 60
 
-# Alert threshold for current imbalance between sensors of the same tank.
+# Alert threshold for current imbalance, checked both sensor-vs-tank-average and
+# node-vs-node-average.
 IMBALANCE_THRESHOLD_A = 5.0
+
+# Tank-wide average current alert threshold. Sized for real production current (job bands run
+# 75-200 A) — do not lower this back toward single digits, that was only ever right for the
+# ~4 A synthetic CSV demo data.
+OVERCURRENT_THRESHOLD_A = 100.0
+
+# A gap longer than this between two consecutive real (non-synthetic) readings from a tank is
+# counted as a "coupure" (data outage) for the outages KPI shown in the history view.
+OUTAGE_GAP_SECONDS = 30
 
 # Fixed current axis (Amps) shared by every tank chart so severity reads the same across
 # cuves. The automate line uses its own secondary axis since it reports a much larger,

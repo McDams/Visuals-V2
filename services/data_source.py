@@ -99,28 +99,51 @@ def load_measurement_types():
     return rows
 
 
-def load_measurements(window_minutes=None):
+def load_measurements(window_minutes=None, sensor_ids=None):
     """Return recent measurements as a list of dicts (matches CSV shape).
 
     In Postgres mode, only the last `window_minutes` (REALTIME_WINDOW_MINUTES by default)
     are fetched so the live dashboard reflects recent production data instead of the entire
     measurements table. Pass an explicit `window_minutes` to fetch a wider one-off range
     (e.g. multi-hour chart history) without changing the default live-polling window.
+
+    Pass `sensor_ids` to scope the query to a handful of sensors (e.g. one tank's). This
+    matters for wide windows: the query is capped at 50000 rows regardless, and without a
+    sensor filter that cap is shared across every sensor on every tank, so a busy system can
+    exhaust it within minutes even when 24h were requested — silently truncating the result to
+    a far shorter span than asked for.
     """
     if not USE_POSTGRES:
-        return _load_csv("measurements.csv")
+        rows = _load_csv("measurements.csv")
+        if sensor_ids is not None:
+            ids = set(sensor_ids)
+            rows = [row for row in rows if row.get("sensor_id") in ids]
+        return rows
 
     minutes = REALTIME_WINDOW_MINUTES if window_minutes is None else window_minutes
-    rows = _query(
-        """
-        SELECT time, sensor_id, measurement_type_id, statistic_id, value_num, internal_count
-        FROM measurements
-        WHERE time > now() - (%s * interval '1 minute')
-        ORDER BY time DESC
-        LIMIT 50000
-        """,
-        (minutes,),
-    )
+    if sensor_ids:
+        rows = _query(
+            """
+            SELECT time, sensor_id, measurement_type_id, statistic_id, value_num, internal_count
+            FROM measurements
+            WHERE time > now() - (%s * interval '1 minute')
+              AND sensor_id = ANY(%s::uuid[])
+            ORDER BY time DESC
+            LIMIT 50000
+            """,
+            (minutes, list(sensor_ids)),
+        )
+    else:
+        rows = _query(
+            """
+            SELECT time, sensor_id, measurement_type_id, statistic_id, value_num, internal_count
+            FROM measurements
+            WHERE time > now() - (%s * interval '1 minute')
+            ORDER BY time DESC
+            LIMIT 50000
+            """,
+            (minutes,),
+        )
     for row in rows:
         row["time"] = row["time"].isoformat() if row.get("time") is not None else None
         row["sensor_id"] = str(row["sensor_id"]) if row.get("sensor_id") is not None else None

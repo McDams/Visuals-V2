@@ -12,6 +12,7 @@ from services.data_source import (
 from services.tank_config import (
     CURRENT_CODES,
     IMBALANCE_THRESHOLD_A,
+    OVERCURRENT_THRESHOLD_A,
     PH_MAX,
     PH_MEASUREMENT_CODE,
     PH_MIN,
@@ -19,7 +20,7 @@ from services.tank_config import (
 )
 
 
-def get_alerts(threshold_current=4.7):
+def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
     """Return a list of simple alerts derived from the current data source.
 
     Alerts include over-current per tank and sensors without recent data.
@@ -96,6 +97,9 @@ def get_alerts(threshold_current=4.7):
                 "alert_type": "Arrêt Programmé",
             })
 
+        # Écart Ampérage, checked at two levels: each individual sensor against the tank-wide
+        # average, and each node against its own left/right average (a sensor can be within
+        # tolerance of the whole tank yet clearly mismatched with its own node partner).
         manual_series = [s for s in view.get("series", []) if not s.get("isAutomate")]
         latest_values = [
             {"label": s["label"], "value": s["points"][-1]["value"]}
@@ -104,16 +108,31 @@ def get_alerts(threshold_current=4.7):
         ]
         if len(latest_values) >= 2:
             avg = sum(item["value"] for item in latest_values) / len(latest_values)
-            worst = max(latest_values, key=lambda item: abs(item["value"] - avg))
-            deviation = abs(worst["value"] - avg)
-            if deviation > IMBALANCE_THRESHOLD_A:
-                alerts.append({
-                    "tank": tank,
-                    "severity": "minor",
-                    "message": f"Écart de courant de {round(deviation, 1)} A sur le capteur {worst['label']} par rapport à la moyenne de la cuve {tank} ({round(avg, 1)} A)",
-                    "metric": "current_imbalance",
-                    "alert_type": "Écart Ampérage",
-                })
+            for item in latest_values:
+                deviation = abs(item["value"] - avg)
+                if deviation > IMBALANCE_THRESHOLD_A:
+                    alerts.append({
+                        "tank": tank,
+                        "severity": "minor",
+                        "message": f"Écart de courant de {round(deviation, 1)} A sur le capteur {item['label']} par rapport à la moyenne de la cuve {tank} ({round(avg, 1)} A)",
+                        "metric": "current_imbalance",
+                        "alert_type": "Écart Ampérage",
+                    })
+
+        for side, side_label in (("left", "Noeud Gauche"), ("right", "Noeud Droite")):
+            node = (view.get("nodes") or {}).get(side)
+            if not node or node.get("balanced") is not False:
+                continue
+            for sensor_item in node.get("sensors", []):
+                delta = sensor_item.get("delta")
+                if delta is not None and abs(delta) > IMBALANCE_THRESHOLD_A:
+                    alerts.append({
+                        "tank": tank,
+                        "severity": "minor",
+                        "message": f"Écart de courant de {abs(delta)} A sur le capteur {sensor_item['name']} par rapport à la moyenne du {side_label} de {tank} ({node.get('avg_current')} A)",
+                        "metric": "node_imbalance",
+                        "alert_type": "Écart Ampérage",
+                    })
 
         job = view.get("job")
         if job and job.get("overrun"):

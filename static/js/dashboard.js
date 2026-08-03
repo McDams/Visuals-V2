@@ -604,6 +604,37 @@ function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }
       <button type="button" class="chart-period-btn${period === '24' ? ' is-active' : ''}" data-period="24">24h</button>
     </div>`;
 
+  // Coupures (data outages) are only computed by the history endpoint, over whatever real
+  // (non-synthetic) timeline it fetched — not meaningful for the short "Direct" live window.
+  const outagesHtml = (() => {
+    if (period === 'live' || !cachedHistory?.outages) return '';
+    const o = cachedHistory.outages;
+    const eventsHtml = o.events.length
+      ? o.events
+          .slice()
+          .reverse()
+          .map(
+            (e) =>
+              `<div class="tank-outage-row">${formatDateTime(e.start)} → ${formatTime(e.end)} <span class="muted">(${formatDuration(e.duration_seconds)})</span></div>`
+          )
+          .join('')
+      : '<p class="muted tank-outages-empty">Aucune coupure détectée sur cette période.</p>';
+    return `
+      <div class="tank-outages">
+        <div class="tank-outages-summary">
+          <div class="tank-stat">
+            <span class="tank-stat-label">Coupures (${period}h)</span>
+            <span class="tank-stat-value${o.count > 0 ? ' tank-stat-value--warn' : ''}">${o.count}</span>
+          </div>
+          <div class="tank-stat">
+            <span class="tank-stat-label">Durée moyenne</span>
+            <span class="tank-stat-value">${formatDuration(o.avg_duration_seconds)}</span>
+          </div>
+        </div>
+        <div class="tank-outages-list">${eventsHtml}</div>
+      </div>`;
+  })();
+
   return `
     <article class="modal-tank-block">
       <header class="modal-header">
@@ -619,12 +650,13 @@ function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }
         </div>
       </header>
       ${view.setpoint?.total != null
-        ? `<p class="modal-setpoint-caption">Consigne automate : ${view.setpoint.total} A · Consigne par capteur actif : ${view.setpoint.per_sensor ?? '--'} A/capteur (${view.sensors_reporting}/${view.sensors_total} capteurs)</p>`
+        ? `<p class="modal-setpoint-caption">Consigne automate : ${view.setpoint.total} A · Consigne par capteur actif : ${view.setpoint.per_sensor ?? '--'} A/capteur (${view.sensors_active}/${view.sensors_total} capteurs en marche)</p>`
         : ''}
       <div class="modal-chart-wrap">
         ${periodSelectorHtml}
         <div class="modal-chart">${chartInner}</div>
       </div>
+      ${outagesHtml}
       ${nodesHtml}
       ${jobHtml}
       ${processHtml}
@@ -723,7 +755,10 @@ function initTankModalChart(view, canvasId) {
     y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: chartAxisColor() }, grid: { color: chartGridColor() } },
   };
   if (hasAutomate) {
-    scales.y1 = { position: 'right', min: 0, ticks: { color: automateColor }, grid: { display: false } };
+    // The automate keeps its own internal scale (so its much larger real current never
+    // squashes the sensor lines near zero) but no visible graduation, to avoid a second
+    // confusing number scale on the chart.
+    scales.y1 = { position: 'right', min: 0, ticks: { display: false }, grid: { display: false } };
   }
 
   chartInstances[canvasId]?.destroy();
@@ -786,7 +821,10 @@ function initHistoryChart(history, canvasId) {
     y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: chartAxisColor() }, grid: { color: chartGridColor() } },
   };
   if (hasAutomate) {
-    scales.y1 = { position: 'right', min: 0, ticks: { color: automateColor }, grid: { display: false } };
+    // The automate keeps its own internal scale (so its much larger real current never
+    // squashes the sensor lines near zero) but no visible graduation, to avoid a second
+    // confusing number scale on the chart.
+    scales.y1 = { position: 'right', min: 0, ticks: { display: false }, grid: { display: false } };
   }
 
   chartInstances[canvasId]?.destroy();
