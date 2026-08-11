@@ -20,6 +20,13 @@
   --critical-text: #fda4af;
   --job-text: #c4b5fd;
 
+  /* Distinct categorical colors for the up-to-4 sensor lines on the chart (bright on the
+     dark background), kept away from the automate (lavender) and status hues. */
+  --chart-1: #38bdf8;
+  --chart-2: #fb923c;
+  --chart-3: #a3e635;
+  --chart-4: #f472b6;
+
   --surface-tint: rgba(255, 255, 255, 0.035);
   --surface-tint-2: rgba(255, 255, 255, 0.06);
   --row-hover: rgba(139, 92, 246, 0.1);
@@ -54,6 +61,12 @@
   --warn-text: #b45309;
   --critical-text: #be123c;
   --job-text: #6d28d9;
+
+  /* Deeper variants of the sensor line colors, for contrast on the white background. */
+  --chart-1: #0284c7;
+  --chart-2: #ea580c;
+  --chart-3: #4d7c0f;
+  --chart-4: #db2777;
 
   --surface-tint: rgba(23, 23, 30, 0.035);
   --surface-tint-2: rgba(23, 23, 30, 0.05);
@@ -264,9 +277,6 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .row-status-dot--warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
 .row-status-dot--critical { background: var(--critical); box-shadow: 0 0 8px var(--critical); }
 .row-status-dot--unknown { background: var(--muted); }
-
-.sparkline-cell { width: 120px; }
-.sparkline-cell canvas { width: 110px !important; height: 34px !important; }
 
 .tabular { font-variant-numeric: tabular-nums; }
 

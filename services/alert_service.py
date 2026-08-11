@@ -65,7 +65,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
             alerts.append({
                 "tank": tank,
                 "severity": "major",
-                "message": f"Courant moyen élevé ({round(avg,2)} A) dans la cuve {tank}",
+                "message": f"Courant élevé : {round(avg)} A",
                 "metric": "current",
                 "value": round(avg, 2),
             })
@@ -92,7 +92,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
             alerts.append({
                 "tank": tank,
                 "severity": "major",
-                "message": f"Cuve {tank} à l'arrêt (courant < 10A depuis plus de 60s)",
+                "message": "À l'arrêt",
                 "metric": "status",
                 "alert_type": "Arrêt Programmé",
             })
@@ -114,7 +114,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                     alerts.append({
                         "tank": tank,
                         "severity": "minor",
-                        "message": f"Écart de courant de {round(deviation, 1)} A sur le capteur {item['label']} par rapport à la moyenne de la cuve {tank} ({round(avg, 1)} A)",
+                        "message": f"Écart de {round(deviation, 1)} A — capteur {item['label']}",
                         "metric": "current_imbalance",
                         "alert_type": "Écart Ampérage",
                     })
@@ -129,7 +129,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                     alerts.append({
                         "tank": tank,
                         "severity": "minor",
-                        "message": f"Écart de courant de {abs(delta)} A sur le capteur {sensor_item['name']} par rapport à la moyenne du {side_label} de {tank} ({node.get('avg_current')} A)",
+                        "message": f"Écart {side_label} de {round(abs(delta), 1)} A — capteur {sensor_item['name']}",
                         "metric": "node_imbalance",
                         "alert_type": "Écart Ampérage",
                     })
@@ -139,7 +139,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
             alerts.append({
                 "tank": tank,
                 "severity": "major",
-                "message": f"Job {job['name']} en cours sur {tank} depuis {job['elapsed_hours']} h (durée attendue : {job['max_hours']} h)",
+                "message": f"Job {job['name']} dépassé : {job['elapsed_hours']} h / {job['max_hours']} h",
                 "metric": "job_duration",
                 "alert_type": "Temps de production",
             })
@@ -166,7 +166,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                 alerts.append({
                     "tank": tank,
                     "severity": "major",
-                    "message": f"pH hors plage sur la cuve {tank} ({data['value']}, attendu {PH_MIN}-{PH_MAX})",
+                    "message": f"pH hors plage : {data['value']}",
                     "metric": "ph",
                     "alert_type": "Alerte pH",
                 })

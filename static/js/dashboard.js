@@ -8,7 +8,7 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 function chartSensorPalette() {
-  return [cssVar('--accent-2'), cssVar('--accent'), cssVar('--warn'), cssVar('--ok')];
+  return [cssVar('--chart-1'), cssVar('--chart-2'), cssVar('--chart-3'), cssVar('--chart-4')];
 }
 function chartAutomateColor() {
   return cssVar('--job-text');
@@ -163,13 +163,6 @@ function statusVisual(view, alerts) {
   return 'unknown';
 }
 
-function primarySeriesFor(view) {
-  const series = view.series || [];
-  const automate = series.find((s) => s.isAutomate && s.points.length);
-  if (automate) return automate;
-  return series.find((s) => s.points && s.points.length) || null;
-}
-
 function renderNodeTable(title, node) {
   if (!node) {
     return `
@@ -317,42 +310,6 @@ function refreshAlertPopover() {
   if (body) body.innerHTML = popoverContentHtml(tank);
 }
 
-function renderSparkline(canvasId, series, color) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx) return;
-  chartInstances[canvasId]?.destroy();
-  if (!series || !series.points.length) return;
-
-  const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 34);
-  gradient.addColorStop(0, `${color}38`);
-  gradient.addColorStop(1, `${color}00`);
-
-  chartInstances[canvasId] = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: series.points.map((p) => p.time),
-      datasets: [
-        {
-          data: series.points.map((p) => p.value),
-          borderColor: color,
-          backgroundColor: gradient,
-          fill: true,
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.35,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: { x: { display: false }, y: { display: false } },
-    },
-  });
-}
-
 function renderTankTable() {
   const tbody = document.getElementById('tank-table-body');
   if (!tbody) return;
@@ -360,7 +317,7 @@ function renderTankTable() {
   setText('table-subtitle', state.tankViews.length ? `${state.tankViews.length} cuve(s) suivie(s) · cliquez une ligne pour le détail` : 'Aucune cuve');
 
   if (state.tankViews.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" class="muted table-empty">Aucune cuve disponible.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="muted table-empty">Aucune cuve disponible.</td></tr>';
     renderCompareBar();
     return;
   }
@@ -417,7 +374,6 @@ function renderTankTable() {
             ${hasProblem ? `<span class="alert-dot-count alert-dot-count--problem">${tankAlerts.length}</span>` : ''}
           </div>
         </td>
-        <td class="sparkline-cell">${view.status === 'arret' ? '<span class="muted">À l\'arrêt</span>' : `<canvas id="spark-${view.tank}"></canvas>`}</td>
         <td class="tabular">${stats.latest_current ?? '--'} A<br /><span class="muted">${stats.latest_voltage ?? '--'} V</span></td>
         <td class="tabular">${nodeCell(view.nodes?.left)}</td>
         <td class="tabular">${nodeCell(view.nodes?.right)}</td>
@@ -428,13 +384,6 @@ function renderTankTable() {
       </tr>`;
     })
     .join('');
-
-  state.tankViews.forEach((view) => {
-    if (view.status === 'arret') return;
-    const visual = statusVisual(view, state.alerts);
-    const color = visual === 'critical' ? cssVar('--critical') : visual === 'warn' ? cssVar('--warn') : cssVar('--accent-2');
-    renderSparkline(`spark-${view.tank}`, primarySeriesFor(view), color);
-  });
 
   const selectAll = document.getElementById('select-all-tanks');
   if (selectAll) selectAll.checked = state.tankViews.every((v) => state.compareTanks.has(v.tank));

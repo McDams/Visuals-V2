@@ -131,7 +131,7 @@ USE_POSTGRES=true
 PG_HOST=172.23.220.11
 PG_PORT=5050
 PG_DATABASE=iotsensors
-PG_USER=otbiread
+PG_USER=iotbiread
 PG_PASSWORD=le_nouveau_mot_de_passe
 
 # Optionnel : fenêtre de données considérée comme "temps réel", en minutes (défaut 60)
