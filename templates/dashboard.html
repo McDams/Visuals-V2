@@ -87,18 +87,35 @@
                 <th>Statut</th>
                 <th>Alerte</th>
                 <th>Consigne</th>
-                <th>Noeud Gauche</th>
-                <th>Noeud Droite</th>
+                <th>Capteurs Gauche</th>
+                <th>Capteurs Droite</th>
                 <th>Job</th>
-                <th>Process</th>
-                <th>Dernière mesure</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="tank-table-body">
-              <tr><td colspan="11" class="muted table-empty">Chargement des cuves...</td></tr>
+              <tr><td colspan="9" class="muted table-empty">Chargement des cuves...</td></tr>
             </tbody>
           </table>
+        </div>
+        <div class="legend">
+          <div class="legend-group">
+            <span class="legend-title">Statut</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--ok"></span>En cours</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--warn"></span>Un côté à l'arrêt</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--critical"></span>Arrêt / alerte majeure</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--unknown"></span>Inconnu</span>
+          </div>
+          <div class="legend-group">
+            <span class="legend-title">Alerte</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--ok"></span>Aucune</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--critical"></span>Alerte active</span>
+          </div>
+          <div class="legend-group">
+            <span class="legend-title">Capteurs</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--ok"></span>OK</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--warn"></span>Déséquilibre / capteur muet</span>
+          </div>
         </div>
       </section>
     </div>

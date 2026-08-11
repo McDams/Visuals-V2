@@ -317,7 +317,7 @@ function renderTankTable() {
   setText('table-subtitle', state.tankViews.length ? `${state.tankViews.length} cuve(s) suivie(s) · cliquez une ligne pour le détail` : 'Aucune cuve');
 
   if (state.tankViews.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="muted table-empty">Aucune cuve disponible.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="muted table-empty">Aucune cuve disponible.</td></tr>';
     renderCompareBar();
     return;
   }
@@ -339,21 +339,12 @@ function renderTankTable() {
       const tankAlerts = alertsForTank(view.tank);
       const hasMajor = tankAlerts.some((a) => a.severity === 'major');
       const hasProblem = tankAlerts.length > 0;
-      const process = view.process || {};
 
       const jobCell = !view.job
         ? '<span class="muted">--</span>'
         : view.job.name
           ? `<span class="job-pill${view.job.overrun ? ' job-pill--overrun' : ''}">${view.job.name} · ${formatTime(view.job.start_time)} → ${formatTime(view.job.predicted_end)}</span>`
           : `<span class="job-pill job-pill--stopped">Arrêt depuis ${formatTime(view.job.not_running_since)}</span>`;
-
-      const processCell =
-        process.recipe_number != null || process.segment_number != null
-          ? `Rec. ${process.recipe_number ?? '--'} · Seg. ${process.segment_number ?? '--'}/${process.total_segments ?? '--'} · ${formatDuration(process.time_remaining)}`
-          : '<span class="muted">--</span>';
-
-      const lastSeenMs = view.last_seen ? new Date(view.last_seen).getTime() : NaN;
-      const isStale = Number.isFinite(lastSeenMs) && Date.now() - lastSeenMs > STALE_MS;
 
       return `
       <tr class="tank-row${hasMajor ? ' tank-row--alert' : ''}" data-tank="${view.tank}" tabindex="0">
@@ -378,8 +369,6 @@ function renderTankTable() {
         <td class="tabular">${nodeCell(view.nodes?.left)}</td>
         <td class="tabular">${nodeCell(view.nodes?.right)}</td>
         <td>${jobCell}</td>
-        <td class="muted process-cell">${processCell}</td>
-        <td class="muted${isStale ? ' tank-last-seen--stale' : ''}">${formatDateTime(view.last_seen)}</td>
         <td class="row-action">›</td>
       </tr>`;
     })

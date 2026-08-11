@@ -223,6 +223,20 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .ticker-item--clickable:hover { text-decoration: underline; }
 @keyframes ticker { to { transform: translateX(-100%); } }
 
+/* ---------- Legend ---------- */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 12px 28px;
+  padding: 14px 22px; border-top: 1px solid var(--border);
+}
+.legend-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.legend-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-dot--ok { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.legend-dot--warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.legend-dot--critical { background: var(--critical); box-shadow: 0 0 6px var(--critical); }
+.legend-dot--unknown { background: var(--muted); }
+
 /* ---------- Compare bar ---------- */
 .compare-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -291,8 +305,6 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 }
 .job-pill--overrun { background: rgba(244, 63, 94, 0.14); color: var(--critical-text); border-color: rgba(244, 63, 94, 0.4); }
 .job-pill--stopped { background: var(--surface-tint); color: var(--muted); border-color: var(--border); }
-
-.process-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .row-action { color: var(--muted); font-size: 1.3rem; text-align: center; transition: color 0.15s, transform 0.15s; }
 .tank-row:hover .row-action { color: var(--accent-2); transform: translateX(3px); }
