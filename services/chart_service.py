@@ -24,6 +24,8 @@ from services.tank_config import (
 
 
 def _sensor_base_value(sensor):
+    """Valeur de courant "de base" (A) autour de laquelle générer une série synthétique pour un
+    capteur sans données réelles, déterministe selon son nom (juste pour que la démo soit lisible)."""
     name = (sensor.get("name") or "").strip().lower()
     if name.startswith("auto"):
         return 4.0
@@ -33,13 +35,13 @@ def _sensor_base_value(sensor):
 
 
 def _generate_random_series(sensor_id, center=4.0, count=6, deviation=0.18, reference_time=None):
-    """Synthetic fallback series for a sensor with no real row in the current window.
+    """Série synthétique de secours pour un capteur sans mesure réelle dans la fenêtre.
 
-    Anchored to `reference_time` (the tank's latest real timestamp, if any) rather than
-    datetime.now(), so a silent sensor's placeholder points end at the same instant as the
-    tank's real data instead of floating disconnected in a completely different time range.
+    Ancrée sur `reference_time` (le dernier horodatage réel de la cuve, s'il existe) plutôt que
+    sur datetime.now(), afin que les points factices d'un capteur muet se terminent au même
+    instant que les vraies données de la cuve, et non dans une plage temporelle sans rapport.
     """
-    rnd = random.Random(sensor_id)
+    rnd = random.Random(sensor_id)  # aléatoire déterministe (même sortie pour un même capteur)
     anchor = reference_time or datetime.now()
     return [
         {
@@ -50,6 +52,7 @@ def _generate_random_series(sensor_id, center=4.0, count=6, deviation=0.18, refe
     ]
 
 
+# Codes de mesure décrivant l'état du process en cours (recette, segment, temps restant).
 PROCESS_CODES = {
     "recipe_number",
     "segment_number",
@@ -60,11 +63,15 @@ PROCESS_CODES = {
 
 
 def _get_measurement_type_map():
+    """Renvoie les types de mesure indexés par id (pour retrouver un "code" rapidement)."""
     rows = load_measurement_types()
     return {row["id"]: row for row in rows}
 
 
 def _build_series(rows, sensors, measurement_types, codes, group_mode):
+    """Construit des séries temporelles regroupées, selon `group_mode` :
+    "tank" (par cuve), "automation" (Automates vs Capteurs), sinon par capteur. Utilisé par
+    les graphiques agrégés de l'API. Les points sont échantillonnés à ~60 si trop nombreux."""
     grouped = defaultdict(list)
     sensor_lookup = {sensor.get("id"): sensor for sensor in sensors if sensor.get("id")}
 
@@ -79,7 +86,7 @@ def _build_series(rows, sensors, measurement_types, codes, group_mode):
         if parsed_time is None or value is None:
             continue
         if code in CURRENT_CODES or code in VOLTAGE_CODES:
-            # measurements are in milli-units in CSV; convert to A / V
+            # Les mesures sont en milli-unités : conversion en A / V.
             value = value / 1000.0
 
         sensor = sensor_lookup.get(row.get("sensor_id"), {})
@@ -96,6 +103,7 @@ def _build_series(rows, sensors, measurement_types, codes, group_mode):
     result = []
     for label, values in sorted(grouped.items()):
         values = sorted(values, key=lambda item: item["time"])
+        # Sous-échantillonnage si trop de points, pour alléger le graphique.
         if len(values) > 80:
             values = values[:: max(1, len(values) // 60)]
         result.append(
@@ -114,8 +122,8 @@ def _build_series(rows, sensors, measurement_types, codes, group_mode):
 
 
 def _node_stopped(sensor_ids, series_map, threshold=STOP_CURRENT_THRESHOLD_A, stop_seconds=STOP_DURATION_SECONDS):
-    """Return True if every sensor in sensor_ids has been below threshold for longer than
-    stop_seconds, False if at least one is currently active, or None if there is no data."""
+    """Renvoie True si TOUS les capteurs de sensor_ids sont sous le seuil depuis plus de
+    stop_seconds, False si au moins un est actuellement actif, ou None s'il n'y a aucune donnée."""
     latest_time = None
     latest_active_time = None
     currently_active = False
@@ -142,7 +150,17 @@ def _node_stopped(sensor_ids, series_map, threshold=STOP_CURRENT_THRESHOLD_A, st
     return (latest_time - latest_active_time).total_seconds() > stop_seconds
 
 
+def _side_status(sensor_ids, series_map):
+    """Statut En cours / Arrêt / Inconnu pour un côté (gauche ou droite) d'une cuve."""
+    stopped = _node_stopped(sensor_ids, series_map)
+    if stopped is None:
+        return "inconnu"
+    return "arret" if stopped else "en_cours"
+
+
 def _tank_status(left_ids, right_ids, all_manual_ids, series_map):
+    """Statut global combiné d'une cuve : en_cours / noeud_g (côté gauche à l'arrêt) /
+    noeud_d (côté droit à l'arrêt) / arret (les deux) / inconnu."""
     if left_ids or right_ids:
         left_stopped = _node_stopped(left_ids, series_map)
         right_stopped = _node_stopped(right_ids, series_map)
@@ -163,6 +181,8 @@ def _tank_status(left_ids, right_ids, all_manual_ids, series_map):
 
 
 def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_real_data):
+    """Construit le tableau de répartition de chaque côté (gauche/droite) : dernière valeur de
+    chaque capteur, écart à la moyenne du côté, équilibre, et nombre de capteurs qui remontent."""
     def _table(node_sensors):
         if not node_sensors:
             return None
@@ -171,8 +191,8 @@ def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_rea
             has_data = sensor["id"] in sensors_with_real_data
             points = series_map.get(sensor["id"]) or []
             value = points[-1]["value"] if points else None
-            # Only report a last-seen timestamp for sensors with a real row: the synthetic
-            # fallback series is timestamped "now" and would otherwise look falsely fresh.
+            # On n'expose un horodatage "dernière mesure" que pour un capteur ayant une vraie
+            # ligne : la série de secours est datée "maintenant" et paraîtrait faussement fraîche.
             last_seen = points[-1]["time"] if has_data and points else None
             latest.append(
                 {
@@ -205,16 +225,17 @@ def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_rea
 
 
 def _matching_job(value):
+    """Renvoie le job (Porteur/Cliché) dont la plage de courant contient `value`, sinon None."""
     return next((j for j in JOBS if j["current_min"] <= value <= j["current_max"]), None)
 
 
 def _detect_job(current_points):
-    """Identify the job running on a tank from its total current, and report timing:
+    """Identifie le job en cours d'une cuve à partir de son courant total, et calcule les temps :
 
-    - If the latest current matches a job band, walk backward to find when it started
-      running that job, and derive the predicted end time from the job's max duration.
-    - Otherwise, walk backward to find since when the current has matched no job band at
-      all, i.e. since when the tank stopped running a recognizable job.
+    - Si le dernier courant tombe dans une plage de job, on remonte le temps pour trouver
+      depuis quand ce job tourne, et on déduit l'heure de fin prévue (début + durée max).
+    - Sinon, on remonte pour trouver depuis quand le courant ne correspond à aucun job, c.-à-d.
+      depuis quand la cuve n'exécute plus de job reconnaissable (elle est "à l'arrêt").
     """
     if not current_points:
         return None
@@ -252,12 +273,13 @@ def _detect_job(current_points):
 
 
 def _sum_series(sensor_ids, series_map):
-    """Merge several chronological per-sensor series into a single total-current series.
+    """Fusionne plusieurs séries chronologiques (une par capteur) en une seule série de courant
+    total.
 
-    The automate's current is the tank's total current redistributed across its node
-    sensors, so summing every sensor's latest known value at each timestamp reconstructs
-    the tank-wide current even for tanks without an automate. A point is only emitted once
-    every sensor has reported at least one value, to avoid understating the sum early on.
+    Le courant de l'automate est le courant total de la cuve redistribué à ses capteurs :
+    sommer la dernière valeur connue de chaque capteur à chaque instant reconstitue donc le
+    courant global, même pour une cuve sans automate. Un point n'est émis que lorsque tous les
+    capteurs ont remonté au moins une valeur, pour ne pas sous-estimer la somme au début.
     """
     sensor_ids = [sid for sid in sensor_ids if series_map.get(sid)]
     if not sensor_ids:
@@ -283,6 +305,8 @@ def _sum_series(sensor_ids, series_map):
 
 
 def _select_tank_sensors(tank_sensors):
+    """Sélectionne jusqu'à 4 capteurs pour une cuve, en priorisant les capteurs manuels
+    (triés par display_order) puis en complétant avec les automates si besoin."""
     manual_sensors = [
         sensor for sensor in tank_sensors if not (sensor.get("name") or "").lower().startswith("auto")
     ]
@@ -312,7 +336,7 @@ def _select_tank_sensors(tank_sensors):
 
 
 def _latest_setpoint(rows, measurement_types, sensor_ids):
-    """Latest current_setpoint value (A) reported by any of the given sensors."""
+    """Dernière valeur de consigne de courant (A) remontée par l'un des capteurs donnés."""
     latest_time = None
     latest_value = None
     for row in rows:
@@ -332,8 +356,8 @@ def _latest_setpoint(rows, measurement_types, sensor_ids):
 
 
 def _current_counts(rows, measurement_types):
-    """How many current rows each sensor reported, used to prioritize sensors with data
-    when a tank has no NODE_MAP entry to fall back on."""
+    """Nombre de mesures de courant remontées par chaque capteur, servant à prioriser les
+    capteurs qui ont des données quand une cuve n'a pas d'entrée dans NODE_MAP."""
     counts = defaultdict(int)
     for row in rows:
         measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
@@ -346,8 +370,9 @@ def _current_counts(rows, measurement_types):
 
 
 def _resolve_tank_sensors(tank, sensors, current_counts):
-    """Pick the automate (if any) and up to 4 manual sensors representing this tank,
-    preferring the physical left/right NODE_MAP order over raw data coverage."""
+    """Choisit l'automate (s'il existe) et jusqu'à 4 capteurs manuels représentant la cuve, en
+    privilégiant l'ordre physique gauche/droite de NODE_MAP plutôt que la simple couverture de
+    données."""
     tank_sensors = [sensor for sensor in sensors if (sensor.get("tank") or "") == tank and sensor.get("id")]
     if not tank_sensors:
         return None, []
@@ -375,6 +400,9 @@ def _resolve_tank_sensors(tank, sensors, current_counts):
 
 
 def _build_tank_sensor_view(rows, sensors, measurement_types):
+    """Cœur du dashboard : pour chaque cuve, construit la vue enrichie (séries de courant par
+    capteur + automate, statut, tableaux de côté, détection de job, consigne, santé des
+    capteurs). C'est ce qui alimente à la fois le tableau, le modal et les alertes."""
     current_counts = _current_counts(rows, measurement_types)
     tanks = sorted({sensor.get("tank") for sensor in sensors if sensor.get("tank")})
     view = []
@@ -387,10 +415,12 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         setpoint_total = _latest_setpoint(rows, measurement_types, {s["id"] for s in tank_sensors})
         automation, selected_sensors = _resolve_tank_sensors(tank, sensors, current_counts)
 
+        # series_map : une liste de points {time, value} par capteur sélectionné (+ automate).
         series_map = {sensor["id"]: [] for sensor in selected_sensors}
         if automation:
             series_map[automation["id"]] = []
 
+        # On ne remplit que les mesures de COURANT des capteurs de cette cuve.
         for row in rows:
             sensor_id = row.get("sensor_id")
             if sensor_id not in series_map:
@@ -404,22 +434,23 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             value = _parse_float(row.get("value_num"))
             if parsed_time is None or value is None:
                 continue
-            value = value / 1000.0
+            value = value / 1000.0  # milli-unités -> ampères
 
             series_map[sensor_id].append({"time": parsed_time, "value": value})
 
         for sensor_id in series_map:
             series_map[sensor_id] = sorted(series_map[sensor_id], key=lambda item: item["time"])
 
-        # Snapshot which sensors actually reported a real row before filling in the
-        # synthetic fallback below, so the UI can tell "sending data" apart from "faked
-        # for the demo" instead of a fake recent timestamp masking a silent sensor.
+        # On mémorise quels capteurs ont VRAIMENT remonté une ligne avant de remplir la série
+        # de secours ci-dessous, pour que l'UI distingue "envoie des données" de "factice pour
+        # la démo" — sinon un faux horodatage récent masquerait un capteur muet.
         sensors_with_real_data = {sensor_id for sensor_id, points in series_map.items() if points}
 
-        # Anchor synthetic fallback points to the tank's latest real timestamp (if any)
-        # instead of datetime.now(), so a silent sensor's placeholder curve ends at the same
-        # instant as the automate/other sensors' real data rather than in an unrelated time
-        # range (this made the automate line look "not simultaneous" with sensor lines).
+        # On ancre les points de secours sur le dernier horodatage réel de la cuve (s'il existe)
+        # plutôt que sur datetime.now(), pour que la courbe factice d'un capteur muet se termine
+        # au même instant que les vraies données de l'automate/des autres capteurs, et non dans
+        # une plage temporelle sans rapport (ce qui faisait paraître la courbe automate "pas
+        # simultanée" avec celles des capteurs).
         reference_time = None
         for points in series_map.values():
             if points and (reference_time is None or points[-1]["time"] > reference_time):
@@ -450,11 +481,11 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         )
         nodes = _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_real_data)
         sensors_reporting = sum(1 for s in selected_sensors if s["id"] in sensors_with_real_data)
-        # "Active" (current >= STOP_CURRENT_THRESHOLD_A) is stricter than "reporting" (has any
-        # real row): a sensor can be sending data while its node is stopped. Only the active
-        # count should divide the automate's setpoint — e.g. when just one node (2 sensors) is
-        # actually running, the per-sensor setpoint must be total/2, not total/4, even if all 4
-        # sensors are technically still reporting data.
+        # "Actif" (courant >= STOP_CURRENT_THRESHOLD_A) est plus strict que "remonte des données"
+        # (a une ligne réelle) : un capteur peut envoyer des données alors que son côté est à
+        # l'arrêt. Seul le nombre de capteurs ACTIFS doit diviser la consigne de l'automate —
+        # p.ex. quand un seul côté (2 capteurs) tourne, la consigne par capteur doit être
+        # total/2, pas total/4, même si les 4 capteurs remontent techniquement des données.
         sensors_active = sum(
             1
             for s in selected_sensors
@@ -507,9 +538,9 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 "sensors_active": sensors_active,
                 "setpoint": {
                     "total": round(setpoint_total, 2) if setpoint_total is not None else None,
-                    # Expected setpoint per currently-active sensor (current above the stop
-                    # threshold), not per currently-reporting one, so it can be compared
-                    # directly to individual sensor readings on the chart.
+                    # Consigne attendue par capteur ACTIF (courant au-dessus du seuil d'arrêt),
+                    # et non par capteur qui remonte des données, pour pouvoir la comparer
+                    # directement aux valeurs des capteurs individuels sur le graphique.
                     "per_sensor": round(setpoint_total / sensors_active, 2)
                     if setpoint_total is not None and sensors_active > 0
                     else None,
@@ -521,8 +552,9 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
 
 
 def get_tank_views():
-    """Public entry point used by other services (e.g. alerts) that need the same enriched
-    per-tank view (status, node tables, job detection) without recomputing it themselves."""
+    """Point d'entrée public réutilisé par d'autres services (ex : alertes) qui ont besoin de
+    la même vue enrichie par cuve (statut, tableaux de côté, détection de job) sans la
+    recalculer eux-mêmes."""
     measurement_types = _get_measurement_type_map()
     sensors = load_sensors()
     measurements = load_measurements()
@@ -530,8 +562,8 @@ def get_tank_views():
 
 
 def _detect_outages(series_map, sensor_ids, gap_seconds=OUTAGE_GAP_SECONDS):
-    """Gaps longer than gap_seconds between two consecutive real readings anywhere in the
-    tank's timeline (across any of its sensors), used for the "coupures" KPI."""
+    """Détecte les trous > gap_seconds entre deux mesures réelles consécutives dans la chronologie
+    de la cuve (tous capteurs confondus), pour le KPI "coupures"."""
     all_times = sorted({point["time"] for sensor_id in sensor_ids for point in series_map.get(sensor_id, [])})
     events = []
     for prev_time, curr_time in zip(all_times, all_times[1:]):
@@ -548,15 +580,17 @@ def _detect_outages(series_map, sensor_ids, gap_seconds=OUTAGE_GAP_SECONDS):
 
 
 def get_tank_history(tank, hours):
-    """Chart series for one tank over a wider, caller-chosen window (e.g. 6h/24h), decoupled
-    from the live dashboard's short REALTIME_WINDOW_MINUTES so browsing history doesn't slow
-    down the main polling loop. Points carry full ISO timestamps (not HH:MM:SS) since a
-    multi-hour range can span midnight. No synthetic fallback: a silent sensor just shows a
-    gap, real history shouldn't be padded with fake data.
+    """Séries du graphique d'une cuve sur une fenêtre plus large choisie par l'appelant (ex :
+    6h/24h), découplée de la courte REALTIME_WINDOW_MINUTES du dashboard live pour que consulter
+    l'historique ne ralentisse pas la boucle de polling. Les points portent un horodatage ISO
+    complet (et non HH:MM:SS) car une plage de plusieurs heures peut franchir minuit. Pas de
+    série de secours : un capteur muet laisse un trou, l'historique réel ne doit pas être
+    rempli de fausses données.
 
-    Measurements are fetched pre-filtered to this tank's own sensors: without that, a wide
-    window (24h) pulls in every sensor across every tank, and the load_measurements() row cap
-    ends up representing only the last few minutes system-wide instead of hours for this tank.
+    Les mesures sont récupérées pré-filtrées sur les capteurs de cette cuve : sinon, une fenêtre
+    large (24h) ramènerait tous les capteurs de toutes les cuves, et le plafond de lignes de
+    load_measurements() ne représenterait que les dernières minutes à l'échelle du système au
+    lieu de plusieurs heures pour cette cuve (voir data_source.load_measurements).
     """
     measurement_types = _get_measurement_type_map()
     sensors = load_sensors()
@@ -609,6 +643,7 @@ def get_tank_history(tank, hours):
             }
         )
 
+    # KPI des coupures sur la fenêtre demandée (nombre, durée moyenne, 20 derniers événements).
     outage_events = _detect_outages(series_map, sensor_ids)
     outages = {
         "count": len(outage_events),
@@ -628,10 +663,15 @@ def get_tank_history(tank, hours):
 
 
 def get_dashboard_payload():
+    """Construit le payload complet renvoyé par /api/dashboard : résumé global, timeline,
+    graphiques agrégés, vue par cuve enrichie (per_tank) + état du process, et échantillon de
+    capteurs. C'est la fonction principale consommée par le front."""
     measurement_types = _get_measurement_type_map()
     sensors = load_sensors()
     measurements = load_measurements()
 
+    # Capteur "sélectionné" par défaut (premier capteur activé et nommé), utilisé pour la
+    # timeline globale.
     selected_sensor = next(
         (sensor for sensor in sensors if _parse_bool(sensor.get("enabled")) and sensor.get("name")),
         sensors[0] if sensors else {},
@@ -639,6 +679,7 @@ def get_dashboard_payload():
     sensor_id = selected_sensor.get("id")
 
     sensor_lookup = {sensor.get("id"): sensor for sensor in sensors if sensor.get("id")}
+    # Accumulateurs par cuve : courant/tension (pour by_tank), dernière mesure, et état process.
     tank_stats = defaultdict(lambda: {"current_measured": [], "voltage_measured": []})
     tank_last_seen = {}
     process_values = defaultdict(dict)
@@ -662,11 +703,12 @@ def get_dashboard_payload():
         if code in CURRENT_CODES or code in VOLTAGE_CODES:
             value = _parse_float(row.get("value_num"))
             if value is not None:
-                # measurements are in milli-units in CSV; convert to A / V
+                # Les mesures sont en milli-unités : conversion en A / V.
                 value = value / 1000.0
                 key = "current_measured" if code in CURRENT_CODES else "voltage_measured"
                 tank_stats[tank][key].append(value)
 
+        # État du process : on ne garde que la valeur la plus récente de chaque code par cuve.
         if code in PROCESS_CODES and parsed_time:
             code_key = (tank, code)
             if code_key not in process_code_time or parsed_time > process_code_time[code_key]:
@@ -686,6 +728,7 @@ def get_dashboard_payload():
         )
 
     def _tank_process(tank_name):
+        # Dernier état de process connu d'une cuve (recette, segment, temps restant, MAJ).
         values = process_values.get(tank_name, {})
         updated_at = process_updated_at.get(tank_name)
         return {
@@ -697,6 +740,7 @@ def get_dashboard_payload():
             "updated_at": updated_at.isoformat() if updated_at else None,
         }
 
+    # On enrichit la vue par cuve avec l'état du process et l'horodatage de dernière mesure.
     per_tank_view = _build_tank_sensor_view(measurements, sensors, measurement_types)
     for view in per_tank_view:
         view["process"] = _tank_process(view["tank"])

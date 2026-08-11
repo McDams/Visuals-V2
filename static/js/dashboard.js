@@ -1,12 +1,15 @@
+// Instances Chart.js vivantes, indexées par id de canvas (pour pouvoir les détruire avant
+// de redessiner). REFRESH_MS = intervalle de rafraîchissement du dashboard (5 s).
 const chartInstances = {};
 const REFRESH_MS = 5000;
 
-// Reads a live CSS custom property so canvas-drawn charts use the same palette as the
-// rest of the UI and stay correct across theme switches (Chart.js can't read var(...)
-// itself, it needs a resolved color string at chart-creation time).
+// Lit une variable CSS en direct : les graphiques dessinés sur canvas utilisent ainsi la même
+// palette que le reste de l'UI et restent corrects au changement de thème (Chart.js ne sait
+// pas lire var(...), il lui faut une couleur résolue au moment de la création du graphe).
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
+// Palette des 4 lignes de capteurs et couleur de la ligne automate.
 function chartSensorPalette() {
   return [cssVar('--chart-1'), cssVar('--chart-2'), cssVar('--chart-3'), cssVar('--chart-4')];
 }
@@ -14,13 +17,14 @@ function chartAutomateColor() {
   return cssVar('--job-text');
 }
 
-// Fixed current axis (A) shared by every tank chart. Keep in sync with
+// Axe de courant (A) fixe et partagé par tous les graphes. À garder synchronisé avec
 // services/tank_config.py CHART_CURRENT_AXIS_MAX.
 const CURRENT_AXIS_MAX = 220;
-// A "last seen" timestamp older than this is flagged stale in the UI. Keep in sync with
-// services/tank_config.py SENSOR_STALE_SECONDS.
+// Un horodatage "dernière mesure" plus ancien que ceci est signalé comme périmé dans l'UI.
+// À garder synchronisé avec services/tank_config.py SENSOR_STALE_SECONDS.
 const STALE_MS = 60000;
 
+// Libellés lisibles des statuts combinés d'une cuve.
 const STATUS_LABELS = {
   en_cours: 'En cours',
   noeud_g: 'Noeud-G',
@@ -29,28 +33,29 @@ const STATUS_LABELS = {
   inconnu: 'Inconnu',
 };
 
-// Latest data snapshot, kept around so the modal can be opened/refreshed without a new
-// fetch, and so it stays live-updated while open during the next polling cycle.
+// Instantané des dernières données reçues, conservé pour pouvoir ouvrir/rafraîchir le modal
+// sans nouvelle requête, et pour qu'il reste à jour pendant le cycle de polling suivant.
 const state = {
   tankViews: [],
   tankStats: [],
   alerts: [],
   openTanks: [],
   openAlertPopoverTank: null,
-  // Checkboxes selected in the table, offered to "Comparer" into a multi-tank modal.
+  // Cases cochées dans le tableau, proposées à la comparaison multi-cuves via "Comparer".
   compareTanks: new Set(),
-  // Chart period per open tank: 'live' (uses the already-loaded real-time series) or '6'/'24'
-  // (hours, fetched on demand from /api/tank/<tank>/history).
+  // Période du graphe par cuve ouverte : 'live' (série temps réel déjà chargée) ou '6'/'24'
+  // (heures, récupérées à la demande via /api/tank/<tank>/history).
   chartPeriod: new Map(),
-  // Last-fetched history payload per tank, so the periodic 5s refresh redraws from cache
-  // instead of re-fetching a wide window every cycle.
+  // Dernier historique récupéré par cuve, pour que le rafraîchissement de 5 s redessine depuis
+  // ce cache au lieu de refaire une requête sur une large fenêtre à chaque cycle.
   historyData: new Map(),
 };
 
-// ---------- Theme (light/dark) ----------
+// ---------- Thème (clair/sombre) ----------
 function isLightTheme() {
   return document.documentElement.getAttribute('data-theme') === 'light';
 }
+// Couleurs des axes/grille/légende des graphes selon le thème actif.
 function chartAxisColor() {
   return isLightTheme() ? '#475569' : '#64748b';
 }
@@ -61,22 +66,27 @@ function chartLegendColor() {
   return isLightTheme() ? '#1e293b' : '#cbd5f5';
 }
 
+// Applique un thème : pose l'attribut data-theme, le mémorise, met à jour le bouton actif, et
+// redessine ce qui est visible (les graphes figent leurs couleurs à la création, d'où le
+// re-render).
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('theme', theme);
   document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.themeChoice === theme);
   });
-  // Chart.js bakes colors in at creation time, so re-render anything currently visible.
   if (state.openTanks.length) renderTankModal();
   renderTankTable();
 }
 
+// Câblage des boutons de bascule de thème + application du thème initial (celui déjà posé par
+// le petit script inline du <head>, ou "dark" par défaut).
 document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
   btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
 });
 applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
 
+// Icône (emoji) par type d'alerte, pour un repère visuel rapide.
 const ALERT_ICONS = {
   'Arrêt Programmé': '⏸',
   'Écart Ampérage': '⚡',
@@ -84,6 +94,7 @@ const ALERT_ICONS = {
   'Alerte pH': '🧪',
 };
 
+// Choisit l'icône d'une alerte selon son type, sa métrique ou son message.
 function iconForAlert(a) {
   if (a.alert_type && ALERT_ICONS[a.alert_type]) return ALERT_ICONS[a.alert_type];
   if (a.metric === 'current') return '🔥';
@@ -91,6 +102,7 @@ function iconForAlert(a) {
   return a.severity === 'major' ? '⚠️' : 'ℹ️';
 }
 
+// Génère le HTML d'une alerte (icône + message + méta), réutilisé dans le popover et le modal.
 function alertItemHtml(a) {
   const meta = [a.alert_type, a.sensor, a.last_seen ? formatDateTime(a.last_seen) : null].filter(Boolean).join(' · ');
   return `
@@ -103,11 +115,13 @@ function alertItemHtml(a) {
     </div>`;
 }
 
+// Écrit du texte dans un élément par son id (sans planter si l'élément n'existe pas).
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
 }
 
+// Formate une durée en secondes -> "H:MM:SS" (ou "MM:SS" si moins d'une heure).
 function formatDuration(seconds) {
   const s = Number(seconds);
   if (!Number.isFinite(s) || s < 0) return '--';
@@ -118,6 +132,7 @@ function formatDuration(seconds) {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
 }
 
+// Formate une date ISO en date+heure locale complète (jj/mm/aaaa hh:mm:ss).
 function formatDateTime(iso) {
   if (!iso) return '--';
   const d = new Date(iso);
@@ -132,6 +147,7 @@ function formatDateTime(iso) {
   });
 }
 
+// Formate une date ISO en heure locale seule (hh:mm:ss), pour l'affichage compact du tableau.
 function formatTime(iso) {
   if (!iso) return '--';
   const d = new Date(iso);
@@ -139,6 +155,7 @@ function formatTime(iso) {
   return d.toLocaleTimeString('fr-FR');
 }
 
+// Met à jour l'horloge du bandeau (date + heure) chaque seconde.
 function tickClock() {
   const now = new Date();
   setText('clock-date', now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
@@ -147,6 +164,7 @@ function tickClock() {
 setInterval(tickClock, 1000);
 tickClock();
 
+// Bascule l'indicateur de connexion "Données en direct" / "Connexion perdue".
 function setConnectionStatus(ok) {
   const wrap = document.getElementById('conn-status');
   if (!wrap) return;
@@ -154,6 +172,8 @@ function setConnectionStatus(ok) {
   setText('conn-label', ok ? 'Données en direct' : 'Connexion perdue');
 }
 
+// Traduit le statut d'une cuve en code couleur visuel (ok/warn/critical/unknown), en tenant
+// compte d'une éventuelle alerte majeure.
 function statusVisual(view, alerts) {
   const hasMajorAlert = alerts.some((a) => a.tank === view.tank && a.severity === 'major');
   if (hasMajorAlert) return 'critical';
@@ -163,6 +183,7 @@ function statusVisual(view, alerts) {
   return 'unknown';
 }
 
+// Génère le HTML d'un tableau de répartition d'un côté (capteurs, écarts, équilibre, santé).
 function renderNodeTable(title, node) {
   if (!node) {
     return `
@@ -191,6 +212,8 @@ function renderNodeTable(title, node) {
     </div>`;
 }
 
+// Boucle principale : récupère les 3 endpoints en parallèle, met à jour l'état et redessine
+// tout. Rappelée toutes les REFRESH_MS.
 async function loadDashboard() {
   try {
     const [dashResp, kpisResp, alertsResp] = await Promise.all([
@@ -213,6 +236,7 @@ async function loadDashboard() {
     renderAlertTicker(state.alerts);
     renderTankTable();
 
+    // Si le modal ou un popover est ouvert, on le garde à jour avec les nouvelles données.
     if (state.openTanks.length) renderTankModal();
     if (state.openAlertPopoverTank) refreshAlertPopover();
 
@@ -223,6 +247,7 @@ async function loadDashboard() {
   }
 }
 
+// Pastille d'alertes du bandeau supérieur (compteur + rouge si alerte majeure).
 function renderAlertPill(alerts) {
   const pill = document.getElementById('alert-pill');
   if (!pill) return;
@@ -236,6 +261,8 @@ function renderAlertPill(alerts) {
   setText('alert-pill-count', alerts.length);
 }
 
+// Bandeau défilant des alertes (les 8 premières). Le contenu est dupliqué pour un défilement
+// sans couture (voir l'animation CSS .ticker-track).
 function renderAlertTicker(alerts) {
   const ticker = document.getElementById('alert-ticker');
   const track = document.getElementById('alert-ticker-track');
@@ -262,10 +289,12 @@ function renderAlertTicker(alerts) {
   ticker.classList.toggle('alert-ticker--critical', alerts.some((a) => a.severity === 'major'));
 }
 
+// Alertes d'une cuve donnée.
 function alertsForTank(tank) {
   return state.alerts.filter((a) => a.tank === tank);
 }
 
+// Contenu HTML du popover d'une cuve (liste d'alertes, ou message rassurant si aucune).
 function popoverContentHtml(tank) {
   const tankAlerts = alertsForTank(tank);
   return tankAlerts.length
@@ -273,6 +302,8 @@ function popoverContentHtml(tank) {
     : '<p class="muted alert-popover-empty">Tout fonctionne correctement.</p>';
 }
 
+// Ouvre le petit popover d'alertes ancré près du point cliqué (repositionné pour rester dans
+// l'écran).
 function openAlertPopover(tank, anchorEl) {
   const popover = document.getElementById('alert-popover');
   const body = document.getElementById('alert-popover-body');
@@ -284,6 +315,7 @@ function openAlertPopover(tank, anchorEl) {
   title.textContent = `${tank} · ${tankAlerts.length ? tankAlerts.length + ' alerte(s)' : 'Aucune alerte'}`;
   body.innerHTML = popoverContentHtml(tank);
 
+  // Positionnement : sous le point par défaut, décalé si ça déborde à droite/en bas.
   popover.hidden = false;
   const rect = anchorEl.getBoundingClientRect();
   const popRect = popover.getBoundingClientRect();
@@ -295,12 +327,14 @@ function openAlertPopover(tank, anchorEl) {
   popover.style.left = `${Math.max(8, left)}px`;
 }
 
+// Ferme le popover d'alertes.
 function closeAlertPopover() {
   state.openAlertPopoverTank = null;
   const popover = document.getElementById('alert-popover');
   if (popover) popover.hidden = true;
 }
 
+// Rafraîchit le contenu du popover ouvert (sans le repositionner) au fil des mises à jour.
 function refreshAlertPopover() {
   if (!state.openAlertPopoverTank) return;
   const tank = state.openAlertPopoverTank;
@@ -310,6 +344,8 @@ function refreshAlertPopover() {
   if (body) body.innerHTML = popoverContentHtml(tank);
 }
 
+// Construit le tableau principal des cuves (une ligne par cuve) et déclenche la barre de
+// comparaison. Rappelé à chaque cycle de rafraîchissement.
 function renderTankTable() {
   const tbody = document.getElementById('tank-table-body');
   if (!tbody) return;
@@ -322,7 +358,9 @@ function renderTankTable() {
     return;
   }
 
+  // Index cuve -> KPI (courant/tension actuels, etc.).
   const statsByTank = Object.fromEntries(state.tankStats.map((t) => [t.tank, t]));
+  // Rendu compact d'une cellule de côté : pastille (équilibre/santé) + courant moyen.
   const nodeCell = (node) => {
     if (!node) return '<span class="muted">Non assigné</span>';
     const missing = node.sensor_count - node.reporting_count;
@@ -374,12 +412,14 @@ function renderTankTable() {
     })
     .join('');
 
+  // Synchronise la case "tout sélectionner" avec l'état réel des sélections.
   const selectAll = document.getElementById('select-all-tanks');
   if (selectAll) selectAll.checked = state.tankViews.every((v) => state.compareTanks.has(v.tank));
 
   renderCompareBar();
 }
 
+// Affiche/masque la barre de comparaison selon le nombre de cuves cochées.
 function renderCompareBar() {
   const bar = document.getElementById('compare-bar');
   if (!bar) return;
@@ -388,10 +428,12 @@ function renderCompareBar() {
   if (count > 0) setText('compare-count', `${count} cuve(s) sélectionnée(s)`);
 }
 
+// Ouvre le modal de détail pour une cuve (string) ou plusieurs (tableau = mode comparaison).
 function openTankModal(tanks) {
   const list = (Array.isArray(tanks) ? tanks : [tanks]).filter(Boolean);
   if (!list.length) return;
   state.openTanks = list;
+  // Période par défaut = 'live' pour chaque cuve nouvellement ouverte.
   list.forEach((tank) => {
     if (!state.chartPeriod.has(tank)) state.chartPeriod.set(tank, 'live');
   });
@@ -401,6 +443,7 @@ function openTankModal(tanks) {
   document.body.classList.add('modal-open');
 }
 
+// Ferme le modal et détruit tous les graphes qu'il contenait (un par cuve ouverte).
 function closeTankModal() {
   state.openTanks.forEach((tank) => {
     const id = `tank-modal-chart-${tank}`;
@@ -413,6 +456,8 @@ function closeTankModal() {
   document.body.classList.remove('modal-open');
 }
 
+// Retire une seule cuve de la comparaison (bouton × d'un bloc). Ferme le modal s'il ne reste
+// plus rien, sinon le redessine.
 function removeTankFromModal(tank) {
   state.openTanks = state.openTanks.filter((t) => t !== tank);
   state.compareTanks.delete(tank);
@@ -427,11 +472,14 @@ function removeTankFromModal(tank) {
   renderTankTable();
 }
 
+// Redessine le contenu du modal pour toutes les cuves ouvertes (1 = détail simple, 2+ = grille
+// de comparaison), puis (re)crée le graphe de chaque bloc selon sa période choisie.
 function renderTankModal() {
   const body = document.getElementById('tank-modal-body');
   const modal = document.querySelector('.tank-modal');
   if (!body) return;
 
+  // On ne garde que les cuves encore présentes dans les données ; sinon on ferme.
   const validTanks = state.openTanks.filter((t) => state.tankViews.some((v) => v.tank === t));
   if (!validTanks.length) {
     closeTankModal();
@@ -444,6 +492,8 @@ function renderTankModal() {
 
   const statsByTank = Object.fromEntries(state.tankStats.map((t) => [t.tank, t]));
 
+  // On prépare un "plan" par cuve (vue, stats, période, historique en cache) puis on génère
+  // tout le HTML d'un coup.
   const plans = state.openTanks.map((tank) => {
     const view = state.tankViews.find((v) => v.tank === tank);
     const stats = statsByTank[tank] || {};
@@ -457,6 +507,8 @@ function renderTankModal() {
     <div class="modal-tanks-grid${multi ? ' modal-tanks-grid--multi' : ''}">${plans.map(tankDetailBlockHtml).join('')}</div>
   `;
 
+  // Après avoir posé le HTML, on initialise le graphe de chaque cuve : temps réel, historique
+  // depuis le cache, ou récupération à la demande.
   plans.forEach((plan) => {
     const canvasId = `tank-modal-chart-${plan.tank}`;
     const hasLiveData = plan.view.status !== 'arret' && (plan.view.series || []).some((s) => s.points.length > 0);
@@ -470,6 +522,8 @@ function renderTankModal() {
   });
 }
 
+// Génère le HTML complet du bloc de détail d'une cuve (en-tête, consigne, sélecteur de
+// période, graphe, coupures, tableaux de côté, job, process, pied de stats, alertes liées).
 function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }) {
   const visual = statusVisual(view, state.alerts);
   const statusLabel = STATUS_LABELS[view.status] || 'Inconnu';
@@ -526,6 +580,8 @@ function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }
       <div class="modal-alerts">${relatedAlerts.map((a) => alertItemHtml(a)).join('')}</div>`
     : '';
 
+  // Contenu de la zone graphe : placeholder de chargement (historique non encore récupéré),
+  // message si à l'arrêt / pas de données, sinon le canvas où sera dessiné le graphe.
   const canvasId = `tank-modal-chart-${tank}`;
   const hasLiveData = view.status !== 'arret' && (view.series || []).some((s) => s.points.length > 0);
   const showLoadingPlaceholder = period !== 'live' && !cachedHistory;
@@ -542,8 +598,8 @@ function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }
       <button type="button" class="chart-period-btn${period === '24' ? ' is-active' : ''}" data-period="24">24h</button>
     </div>`;
 
-  // Coupures (data outages) are only computed by the history endpoint, over whatever real
-  // (non-synthetic) timeline it fetched — not meaningful for the short "Direct" live window.
+  // Les coupures ne sont calculées que par l'endpoint d'historique, sur la chronologie réelle
+  // (non synthétique) récupérée — pas pertinent pour la courte fenêtre "Direct" temps réel.
   const outagesHtml = (() => {
     if (period === 'live' || !cachedHistory?.outages) return '';
     const o = cachedHistory.outages;
@@ -616,17 +672,19 @@ function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }
     </article>`;
 }
 
+// Récupère l'historique (6h/24h) d'une cuve, le met en cache, puis dessine le graphe. Gère les
+// cas où la sélection a changé pendant la requête, ou où le bloc a été reconstruit entre-temps.
 async function loadAndRenderHistory(tank, hours, canvasId) {
   try {
     const resp = await fetch(`/api/tank/${encodeURIComponent(tank)}/history?hours=${hours}`);
     if (!resp.ok) throw new Error('HTTP error');
     const history = await resp.json();
     state.historyData.set(tank, history);
-    // The period/tank selection may have changed while the request was in flight.
+    // La sélection période/cuve a pu changer pendant la requête : on abandonne dans ce cas.
     if (state.chartPeriod.get(tank) !== String(hours) || !state.openTanks.includes(tank)) return;
     if (!document.getElementById(canvasId)) {
-      // The block was rebuilt (e.g. by the 5s poll) while loading; re-render now that the
-      // history is cached so the chart appears instead of staying on the loading placeholder.
+      // Le bloc a été reconstruit (p.ex. par le poll de 5 s) pendant le chargement ; on
+      // redessine maintenant que l'historique est en cache, pour que le graphe apparaisse.
       renderTankModal();
       return;
     }
@@ -638,10 +696,13 @@ async function loadAndRenderHistory(tank, hours, canvasId) {
   }
 }
 
+// Crée le graphe "temps réel" d'une cuve (séries capteurs + automate sur axe secondaire +
+// ligne de consigne). Les libellés d'axe X sont des HH:MM:SS triés chronologiquement.
 function initTankModalChart(view, canvasId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
+  // Union triée de tous les horodatages (les points sont alignés par libellé de temps).
   const labels = Array.from(new Set((view.series || []).flatMap((s) => s.points.map((p) => p.time)))).sort((a, b) => {
     const [ah, am, as] = a.split(':').map(Number);
     const [bh, bm, bs] = b.split(':').map(Number);
@@ -670,13 +731,13 @@ function initTankModalChart(view, canvasId) {
     };
   });
 
+  // Ligne de consigne (courant attendu par capteur actif) : couleur pleine contraste + gros
+  // tirets, pour qu'elle se lise clairement comme un seuil de référence, distincte des courbes.
   const setpointPerSensor = view.setpoint?.per_sensor;
   if (setpointPerSensor != null && labels.length) {
     datasets.push({
       label: `Consigne (${setpointPerSensor} A/capteur)`,
       data: labels.map(() => setpointPerSensor),
-      // Full-contrast foreground color + thick long dashes so the target line reads
-      // unmistakably as a reference threshold, distinct from the softer data-line palette.
       borderColor: cssVar('--text'),
       backgroundColor: 'transparent',
       borderWidth: 2.5,
@@ -688,14 +749,13 @@ function initTankModalChart(view, canvasId) {
 
   const scales = {
     x: { grid: { display: false }, ticks: { color: chartAxisColor(), maxTicksLimit: 6 } },
-    // Fixed, shared axis (0..CURRENT_AXIS_MAX) so every tank reads at the same scale, and
-    // so a large real automate value never squashes the manual sensor lines near zero.
+    // Axe fixe et partagé (0..CURRENT_AXIS_MAX) pour que chaque cuve se lise à la même échelle,
+    // et pour qu'une grande valeur réelle d'automate n'écrase pas les lignes des capteurs.
     y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: chartAxisColor() }, grid: { color: chartGridColor() } },
   };
   if (hasAutomate) {
-    // The automate keeps its own internal scale (so its much larger real current never
-    // squashes the sensor lines near zero) but no visible graduation, to avoid a second
-    // confusing number scale on the chart.
+    // L'automate garde sa propre échelle interne (pour ne pas écraser les capteurs) mais sans
+    // graduation visible, afin d'éviter une 2e échelle de chiffres déroutante sur le graphe.
     scales.y1 = { position: 'right', min: 0, ticks: { display: false }, grid: { display: false } };
   }
 
@@ -716,6 +776,9 @@ function initTankModalChart(view, canvasId) {
   });
 }
 
+// Crée le graphe "historique" (6h/24h) d'une cuve. Contrairement au temps réel, les points
+// portent un horodatage ISO complet : on trie par date réelle et on formate les libellés selon
+// l'étendue (heure seule si <= 6h, sinon jour + heure car la plage peut franchir minuit).
 function initHistoryChart(history, canvasId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !history) return;
@@ -759,9 +822,7 @@ function initHistoryChart(history, canvasId) {
     y: { min: 0, max: CURRENT_AXIS_MAX, ticks: { color: chartAxisColor() }, grid: { color: chartGridColor() } },
   };
   if (hasAutomate) {
-    // The automate keeps its own internal scale (so its much larger real current never
-    // squashes the sensor lines near zero) but no visible graduation, to avoid a second
-    // confusing number scale on the chart.
+    // Idem que pour le graphe temps réel : échelle interne conservée, graduation masquée.
     scales.y1 = { position: 'right', min: 0, ticks: { display: false }, grid: { display: false } };
   }
 
@@ -782,6 +843,7 @@ function initHistoryChart(history, canvasId) {
   });
 }
 
+// Fermeture du modal : bouton ×, clic sur le fond, ou touche Échap.
 document.getElementById('tank-modal-close')?.addEventListener('click', closeTankModal);
 document.getElementById('tank-modal-backdrop')?.addEventListener('click', (event) => {
   if (event.target.id === 'tank-modal-backdrop') closeTankModal();
@@ -790,10 +852,11 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && state.openTanks.length) closeTankModal();
 });
 
-// Delegated click handlers: attached once to containers that are never replaced (only their
-// children are re-rendered every poll), so a click always lands on a live listener even if
-// the table/ticker/alerts re-render mid-click.
+// Gestionnaires de clic délégués : attachés une seule fois à des conteneurs jamais remplacés
+// (seuls leurs enfants sont redessinés à chaque poll), pour qu'un clic tombe toujours sur un
+// écouteur vivant même si le tableau/bandeau/alertes se redessinent en plein clic.
 document.getElementById('tank-table-body')?.addEventListener('click', (event) => {
+  // Case à cocher : ajoute/retire la cuve de la comparaison (sans ouvrir le modal).
   const checkbox = event.target.closest('.tank-select');
   if (checkbox) {
     event.stopPropagation();
@@ -805,6 +868,7 @@ document.getElementById('tank-table-body')?.addEventListener('click', (event) =>
     if (selectAll) selectAll.checked = state.tankViews.every((v) => state.compareTanks.has(v.tank));
     return;
   }
+  // Point d'alerte : ouvre/ferme le popover de la cuve (sans ouvrir le modal).
   const dot = event.target.closest('.alert-dot');
   if (dot) {
     event.stopPropagation();
@@ -816,9 +880,11 @@ document.getElementById('tank-table-body')?.addEventListener('click', (event) =>
     }
     return;
   }
+  // Sinon, un clic n'importe où sur la ligne ouvre le modal de détail.
   const row = event.target.closest('.tank-row');
   if (row) openTankModal(row.dataset.tank);
 });
+// Accessibilité clavier : Entrée/Espace sur une ligne ouvre aussi le modal.
 document.getElementById('tank-table-body')?.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
   const row = event.target.closest('.tank-row');
@@ -827,11 +893,13 @@ document.getElementById('tank-table-body')?.addEventListener('keydown', (event) 
     openTankModal(row.dataset.tank);
   }
 });
+// Clic sur un item du bandeau défilant -> ouvre le modal de la cuve concernée.
 document.getElementById('alert-ticker-track')?.addEventListener('click', (event) => {
   const item = event.target.closest('.ticker-item--clickable');
   if (item && item.dataset.tank) openTankModal(item.dataset.tank);
 });
 
+// Barre de comparaison : tout sélectionner / effacer / ouvrir la comparaison.
 document.getElementById('select-all-tanks')?.addEventListener('change', (event) => {
   if (event.target.checked) state.tankViews.forEach((v) => state.compareTanks.add(v.tank));
   else state.compareTanks.clear();
@@ -845,6 +913,7 @@ document.getElementById('compare-open-btn')?.addEventListener('click', () => {
   if (state.compareTanks.size) openTankModal(Array.from(state.compareTanks));
 });
 
+// Clics à l'intérieur du modal : retirer une cuve, ou changer la période d'un graphe.
 document.getElementById('tank-modal-body')?.addEventListener('click', (event) => {
   const removeBtn = event.target.closest('[data-remove-tank]');
   if (removeBtn) {
@@ -861,6 +930,7 @@ document.getElementById('tank-modal-body')?.addEventListener('click', (event) =>
   }
 });
 
+// Fermeture du popover d'alertes : bouton ×, clic en dehors, Échap, ou défilement.
 document.getElementById('alert-popover-close')?.addEventListener('click', closeAlertPopover);
 document.addEventListener('click', (event) => {
   if (!state.openAlertPopoverTank) return;
@@ -871,6 +941,7 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && state.openAlertPopoverTank) closeAlertPopover();
 });
+// Au défilement, on ferme le popover (sa position est figée au moment de l'ouverture).
 window.addEventListener(
   'scroll',
   () => {
@@ -879,5 +950,6 @@ window.addEventListener(
   true
 );
 
+// Premier chargement immédiat, puis rafraîchissement automatique toutes les REFRESH_MS.
 loadDashboard();
 setInterval(loadDashboard, REFRESH_MS);

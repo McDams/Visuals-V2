@@ -21,16 +21,20 @@ from services.tank_config import (
 
 
 def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
-    """Return a list of simple alerts derived from the current data source.
+    """Construit la liste des alertes actives à partir de la source de données courante.
 
-    Alerts include over-current per tank and sensors without recent data.
+    Types d'alertes : courant élevé par cuve, capteurs sans données récentes, cuve à l'arrêt,
+    écart de courant (par capteur et par côté), dépassement de temps de production, pH.
     """
+    # measurement_types indexé par id pour retrouver le "code" d'une mesure.
     measurement_types = {row["id"]: row for row in load_measurement_types()}
     sensors = load_sensors()
     measurements = load_measurements()
 
     sensor_lookup = {s.get("id"): s for s in sensors}
 
+    # tank_currents : valeurs de courant par cuve (pour la moyenne).
+    # last_seen : dernier horodatage vu par capteur (pour l'alerte "pas de données récentes").
     tank_currents = defaultdict(list)
     last_seen = defaultdict(lambda: None)
 
@@ -41,7 +45,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
         if val is None:
             continue
         if code in CURRENT_CODES:
-            val = val / 1000.0
+            val = val / 1000.0  # milli-unités -> ampères
         sensor = sensor_lookup.get(row.get("sensor_id"))
         tank = (sensor.get("tank") if sensor else None) or "Inconnu"
 
@@ -56,7 +60,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
 
     alerts = []
 
-    # Over-current per tank
+    # --- Courant moyen élevé par cuve ---
     for tank, currents in tank_currents.items():
         if not currents:
             continue
@@ -70,7 +74,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                 "value": round(avg, 2),
             })
 
-    # Sensors without recent data (last seen more than SENSOR_STALE_SECONDS ago)
+    # --- Capteurs sans données récentes (dernière mesure > SENSOR_STALE_SECONDS) ---
     now = datetime.now()
     for s in sensors:
         sid = s.get("id")
@@ -84,10 +88,11 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                 "last_seen": ls.isoformat() if ls else None,
             })
 
-    # Tank-level alerts derived from the enriched per-tank view (status, node balance, job).
+    # --- Alertes au niveau cuve, dérivées de la vue enrichie (statut, équilibre, job) ---
     for view in get_tank_views():
         tank = view["tank"]
 
+        # Cuve entièrement à l'arrêt.
         if view.get("status") == "arret":
             alerts.append({
                 "tank": tank,
@@ -97,9 +102,9 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                 "alert_type": "Arrêt Programmé",
             })
 
-        # Écart Ampérage, checked at two levels: each individual sensor against the tank-wide
-        # average, and each node against its own left/right average (a sensor can be within
-        # tolerance of the whole tank yet clearly mismatched with its own node partner).
+        # Écart de courant, vérifié à deux niveaux : chaque capteur par rapport à la moyenne de
+        # la cuve, et chaque côté par rapport à sa propre moyenne gauche/droite (un capteur peut
+        # être dans la tolérance de toute la cuve mais nettement décalé de son partenaire de côté).
         manual_series = [s for s in view.get("series", []) if not s.get("isAutomate")]
         latest_values = [
             {"label": s["label"], "value": s["points"][-1]["value"]}
@@ -108,6 +113,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
         ]
         if len(latest_values) >= 2:
             avg = sum(item["value"] for item in latest_values) / len(latest_values)
+            # Une alerte par capteur dépassant le seuil (pas seulement le pire).
             for item in latest_values:
                 deviation = abs(item["value"] - avg)
                 if deviation > IMBALANCE_THRESHOLD_A:
@@ -119,6 +125,8 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                         "alert_type": "Écart Ampérage",
                     })
 
+        # Écart interne à un côté (gauche/droite) : le tableau de nœud fournit déjà le "delta"
+        # de chaque capteur par rapport à la moyenne de son côté et un drapeau "balanced".
         for side, side_label in (("left", "Noeud Gauche"), ("right", "Noeud Droite")):
             node = (view.get("nodes") or {}).get(side)
             if not node or node.get("balanced") is not False:
@@ -134,6 +142,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                         "alert_type": "Écart Ampérage",
                     })
 
+        # Dépassement de la durée attendue du job en cours.
         job = view.get("job")
         if job and job.get("overrun"):
             alerts.append({
@@ -144,8 +153,8 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                 "alert_type": "Temps de production",
             })
 
-    # pH monitoring: inactive until PH_MEASUREMENT_CODE / PH_MIN / PH_MAX are set in
-    # services/tank_config.py (no ph measurement code exists in the current schema/demo data).
+    # --- Surveillance pH : inactive tant que PH_MEASUREMENT_CODE / PH_MIN / PH_MAX ne sont pas
+    # renseignés dans tank_config.py (aucun code pH dans le schéma/les données de démo). ---
     if PH_MEASUREMENT_CODE is not None and PH_MIN is not None and PH_MAX is not None:
         ph_latest = {}
         for row in measurements:
@@ -158,6 +167,7 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                 continue
             sensor = sensor_lookup.get(row.get("sensor_id"))
             tank = (sensor.get("tank") if sensor else None) or "Inconnu"
+            # On ne garde que la dernière valeur de pH par cuve.
             if tank not in ph_latest or t > ph_latest[tank]["time"]:
                 ph_latest[tank] = {"time": t, "value": val}
 
@@ -171,6 +181,6 @@ def get_alerts(threshold_current=OVERCURRENT_THRESHOLD_A):
                     "alert_type": "Alerte pH",
                 })
 
-    # cap results
+    # Tri (majeures d'abord, puis par cuve) et plafond à 30 alertes.
     alerts = sorted(alerts, key=lambda a: (a.get("severity") != "major", a.get("tank") or ""))[:30]
     return alerts

@@ -4,14 +4,19 @@ from pathlib import Path
 
 from config.database import get_connection
 
+# Dossier racine du projet et dossier des fixtures CSV (utilisées en mode démo).
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_DIR = BASE_DIR / "db"
 
+# Bascule CSV / PostgreSQL et fenêtre temps réel, lues une fois au chargement du module
+# depuis les variables d'environnement (voir README).
 USE_POSTGRES = os.environ.get("USE_POSTGRES", "").strip().lower() in ("1", "true", "yes")
 REALTIME_WINDOW_MINUTES = int(os.environ.get("REALTIME_WINDOW_MINUTES", "60"))
 
 
 def _load_csv(filename):
+    """Lit un fichier CSV du dossier db/ en liste de dicts, en convertissant les "NULL"
+    textuels en None (comme le ferait la base)."""
     with (DB_DIR / filename).open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     for row in rows:
@@ -22,6 +27,8 @@ def _load_csv(filename):
 
 
 def _query(sql, params=None):
+    """Exécute une requête SQL et renvoie les lignes en liste de dicts. Ouvre et referme une
+    connexion à chaque appel (pas de pool) — suffisant ici et évite tout état partagé."""
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -35,6 +42,7 @@ def _query(sql, params=None):
 
 
 def parse_float(value):
+    """Convertit en float de façon tolérante ; renvoie None si vide ou non convertible."""
     if value in (None, ""):
         return None
     try:
@@ -44,6 +52,14 @@ def parse_float(value):
 
 
 def parse_time(value):
+    """Parse un timestamp ISO en datetime, en le ramenant en heure locale naïve.
+
+    Les timestamps Postgres/CSV portent un décalage (souvent UTC). On les convertit en heure
+    locale sans fuseau pour qu'ils s'alignent avec datetime.now() (utilisé pour la série de
+    secours synthétique et les contrôles de fraîcheur) — sinon on mélangeait des heures UTC et
+    locales, ce qui faisait apparaître l'axe des graphes décalé de plusieurs heures par rapport
+    au reste de l'interface.
+    """
     if not value:
         return None
     from datetime import datetime
@@ -54,15 +70,12 @@ def parse_time(value):
         return None
 
     if parsed.tzinfo is not None:
-        # Postgres/CSV timestamps carry a UTC-ish offset; convert to naive local time so
-        # they line up with datetime.now() (used for the synthetic fallback series and
-        # staleness checks) instead of silently mixing UTC and local hours, which made
-        # chart x-axis labels look hours apart from the rest of the UI.
         parsed = parsed.astimezone().replace(tzinfo=None)
     return parsed
 
 
 def parse_bool(value):
+    """Convertit en booléen (accepte les booléens natifs et les chaînes "true"/"false")."""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -71,7 +84,11 @@ def parse_bool(value):
 
 
 def load_sensors():
-    """Return sensor metadata as a list of dicts with string values (matches CSV shape)."""
+    """Renvoie les métadonnées des capteurs (liste de dicts, valeurs en chaînes comme le CSV).
+
+    En mode PostgreSQL, on force id et display_order en chaînes pour que le reste du code
+    (comparaisons de clés, .isdigit(), etc.) fonctionne à l'identique du mode CSV.
+    """
     if not USE_POSTGRES:
         return _load_csv("sensors.csv")
 
@@ -87,7 +104,7 @@ def load_sensors():
 
 
 def load_measurement_types():
-    """Return measurement type metadata as a list of dicts (matches CSV shape)."""
+    """Renvoie les types de mesure (liste de dicts), id forcé en chaîne comme en mode CSV."""
     if not USE_POSTGRES:
         return _load_csv("measurement_types.csv")
 
@@ -100,20 +117,22 @@ def load_measurement_types():
 
 
 def load_measurements(window_minutes=None, sensor_ids=None):
-    """Return recent measurements as a list of dicts (matches CSV shape).
+    """Renvoie les mesures récentes (liste de dicts, même forme que le CSV).
 
-    In Postgres mode, only the last `window_minutes` (REALTIME_WINDOW_MINUTES by default)
-    are fetched so the live dashboard reflects recent production data instead of the entire
-    measurements table. Pass an explicit `window_minutes` to fetch a wider one-off range
-    (e.g. multi-hour chart history) without changing the default live-polling window.
+    En mode Postgres, on ne récupère que les `window_minutes` dernières minutes
+    (REALTIME_WINDOW_MINUTES par défaut) pour que le dashboard live reflète des données
+    récentes plutôt que toute la table. Passer un `window_minutes` explicite permet une
+    requête ponctuelle sur une plage plus large (ex : historique de plusieurs heures) sans
+    changer la fenêtre de polling par défaut.
 
-    Pass `sensor_ids` to scope the query to a handful of sensors (e.g. one tank's). This
-    matters for wide windows: the query is capped at 50000 rows regardless, and without a
-    sensor filter that cap is shared across every sensor on every tank, so a busy system can
-    exhaust it within minutes even when 24h were requested — silently truncating the result to
-    a far shorter span than asked for.
+    Passer `sensor_ids` restreint la requête à quelques capteurs (ceux d'une cuve). C'est
+    important sur les fenêtres larges : la requête est plafonnée à 50000 lignes, et sans filtre
+    ce plafond est partagé entre tous les capteurs de toutes les cuves — un système chargé peut
+    l'épuiser en quelques minutes même quand on a demandé 24 h, tronquant silencieusement le
+    résultat à une plage bien plus courte que demandé.
     """
     if not USE_POSTGRES:
+        # Mode CSV : on charge tout le fichier puis on filtre éventuellement par capteur.
         rows = _load_csv("measurements.csv")
         if sensor_ids is not None:
             ids = set(sensor_ids)
@@ -122,6 +141,7 @@ def load_measurements(window_minutes=None, sensor_ids=None):
 
     minutes = REALTIME_WINDOW_MINUTES if window_minutes is None else window_minutes
     if sensor_ids:
+        # Requête filtrée sur les capteurs demandés (=ANY sur un tableau d'uuid).
         rows = _query(
             """
             SELECT time, sensor_id, measurement_type_id, statistic_id, value_num, internal_count
@@ -134,6 +154,7 @@ def load_measurements(window_minutes=None, sensor_ids=None):
             (minutes, list(sensor_ids)),
         )
     else:
+        # Requête globale (tous capteurs) pour le dashboard live.
         rows = _query(
             """
             SELECT time, sensor_id, measurement_type_id, statistic_id, value_num, internal_count
@@ -144,6 +165,7 @@ def load_measurements(window_minutes=None, sensor_ids=None):
             """,
             (minutes,),
         )
+    # Normalisation des types pour coller à la forme du CSV (chaînes / ISO) attendue en aval.
     for row in rows:
         row["time"] = row["time"].isoformat() if row.get("time") is not None else None
         row["sensor_id"] = str(row["sensor_id"]) if row.get("sensor_id") is not None else None

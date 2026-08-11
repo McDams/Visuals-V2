@@ -1,12 +1,18 @@
-# Physical left/right node mapping per tank. Keys are matched against a sensor's "name"
-# first, then its "eui64" (used for KS2, whose manual sensors have no name in the database).
+# =====================================================================================
+# Configuration métier centralisée : tous les seuils et associations ajustables du projet
+# sont ici, pour ne pas avoir à fouiller le code quand une valeur change.
+# =====================================================================================
+
+# Association physique capteur -> côté (gauche/droite) par cuve. La clé est comparée d'abord
+# au "name" du capteur, puis à son "eui64" (utile pour KS2, dont les capteurs manuels n'ont
+# pas de nom en base).
 NODE_MAP = {
     "KS1": {"13": "left", "14": "left", "11": "right", "12": "right"},
     "KS2": {
-        # KS2's manual sensors have no name, only an eui64. There is no physical left/right
-        # information available for them, so they are split by display_order (the two lowest
-        # = left, the two highest = right) as a deterministic placeholder — correct the
-        # mapping below once the real layout is known.
+        # Les capteurs manuels de KS2 n'ont pas de nom, seulement un eui64, et aucune
+        # information gauche/droite réelle n'est disponible : ils sont répartis par
+        # display_order (les deux plus petits = gauche, les deux plus grands = droite) comme
+        # solution provisoire — à corriger dès que la disposition physique réelle est connue.
         "F4CE3615B2076C01": "left",   # display_order 6
         "F4CE36735C9A8290": "left",   # display_order 9
         "F4CE36AC7ADAD99C": "right",  # display_order 10
@@ -16,70 +22,74 @@ NODE_MAP = {
     "KS4": {"3": "left", "7": "left", "1": "right", "2": "right"},
 }
 
-# Measurement type codes that carry a current value. Per measurement_types' descriptions,
-# "current_measured" is automaton-specific while individual node sensors report under the
-# generic "current" code ("sensor supplied") — both must be accepted or per-sensor readings
-# are silently dropped.
+# Codes de mesure porteurs d'une valeur de COURANT. D'après les descriptions de
+# measurement_types, "current_measured" est spécifique à l'automate, tandis que les capteurs
+# individuels remontent sous le code générique "current" ("sensor supplied") — il faut
+# accepter les deux, sinon les mesures des capteurs sont ignorées silencieusement.
 CURRENT_CODES = {"current", "current_measured"}
 
-# Voltage only has an automaton-reported code in the current schema: "voltage" ("Voltage from
-# automaton if available") and "voltage_measured" ("Voltage measured automaton") are both
-# automaton-only, and are NOT interchangeable like the current codes — "voltage" can carry a
-# different, occasionally negative, raw/setpoint-like value. Only "voltage_measured" is a true
-# measurement, so it is the only one used everywhere a "voltage" is displayed.
+# Codes de mesure porteurs d'une TENSION. Dans le schéma actuel, "voltage" ("Voltage from
+# automaton if available") et "voltage_measured" ("Voltage measured automaton") viennent tous
+# deux de l'automate et ne sont PAS interchangeables comme pour le courant : "voltage" peut
+# porter une valeur brute/consigne parfois négative. Seul "voltage_measured" est une vraie
+# mesure, c'est donc le seul utilisé partout où on affiche une tension.
 VOLTAGE_CODES = {"voltage_measured"}
 
-# Measurement type code for the automaton's target current (used to derive an expected
-# per-sensor setpoint = total setpoint / number of sensors currently reporting data).
+# Code de mesure de la consigne de courant de l'automate (sert à calculer une consigne
+# attendue par capteur = consigne totale / nombre de capteurs réellement en marche).
 CURRENT_SETPOINT_CODE = "current_setpoint"
 
-# A tank/node is considered stopped once its current has stayed below this threshold for
-# longer than STOP_DURATION_SECONDS.
+# Une cuve/un côté est considéré à l'arrêt dès que son courant reste sous ce seuil pendant
+# plus de STOP_DURATION_SECONDS.
 STOP_CURRENT_THRESHOLD_A = 10.0
 STOP_DURATION_SECONDS = 60
 
-# A sensor is flagged with a "Pas de données récentes" alert once its last reading is older
-# than this. Tune it to your real sensors' reporting interval plus some margin for network/
-# polling jitter — too tight and healthy sensors will false-positive on every normal delay.
+# Un capteur déclenche l'alerte "Pas de données récentes" dès que sa dernière mesure est plus
+# ancienne que ce délai. À caler sur l'intervalle réel de remontée des capteurs + une marge
+# pour la latence réseau/polling — trop court, et des capteurs sains déclencheront à tort.
 SENSOR_STALE_SECONDS = 60
 
-# Alert threshold for current imbalance, checked both sensor-vs-tank-average and
-# node-vs-node-average.
+# Seuil d'alerte pour l'écart de courant, vérifié à la fois capteur-vs-moyenne-cuve et
+# capteur-vs-moyenne-du-côté.
 IMBALANCE_THRESHOLD_A = 5.0
 
-# Tank-wide average current alert threshold. Sized for real production current (job bands run
-# 75-200 A) — do not lower this back toward single digits, that was only ever right for the
-# ~4 A synthetic CSV demo data.
+# Seuil d'alerte "Courant élevé" (moyenne d'une cuve). Dimensionné pour le courant réel de
+# production (les jobs tournent entre 75 et 200 A) — ne pas le rabaisser vers quelques ampères,
+# ce n'était valable que pour les données de démo CSV synthétiques (~4 A).
 OVERCURRENT_THRESHOLD_A = 100.0
 
-# A gap longer than this between two consecutive real (non-synthetic) readings from a tank is
-# counted as a "coupure" (data outage) for the outages KPI shown in the history view.
+# Un trou plus long que ceci entre deux mesures réelles (non synthétiques) d'une cuve est
+# compté comme une "coupure" pour le KPI affiché dans la vue historique.
 OUTAGE_GAP_SECONDS = 30
 
-# Fixed current axis (Amps) shared by every tank chart so severity reads the same across
-# cuves. The automate line uses its own secondary axis since it reports a much larger,
-# tank-wide current than the individual node sensors.
+# Échelle de courant (A) fixe et partagée par tous les graphiques de cuve, pour que la
+# sévérité se lise pareil d'une cuve à l'autre. La ligne de l'automate utilise son propre axe
+# secondaire car elle remonte un courant global bien plus grand que les capteurs individuels.
 CHART_CURRENT_AXIS_MAX = 220
 
-# Job current bands used to auto-detect which job is running (based on the tank's total
-# current — the sum of its node sensors' currents, which equals the automate's current
-# since that current is redistributed across the sensors) and how long it is allowed to
-# run before a production-time alert fires.
+# Plages de courant servant à détecter automatiquement le job en cours (à partir du courant
+# total de la cuve — la somme des courants des capteurs, qui reconstitue le courant de
+# l'automate puisqu'il est redistribué aux capteurs) et la durée max autorisée avant que
+# l'alerte "Temps de production" se déclenche.
 JOBS = [
     {"name": "Porteur", "current_min": 75.0, "current_max": 105.0, "max_duration_hours": 16},
     {"name": "Cliché", "current_min": 160.0, "current_max": 200.0, "max_duration_hours": 2},
 ]
 
-# pH monitoring is not wired yet: neither the demo CSV nor the documented schema has a ph
-# measurement code. Set these once the real code + acceptable range are known (see README)
-# to activate the "Alerte pH" check.
+# Surveillance du pH non branchée pour l'instant : ni le CSV de démo ni le schéma documenté
+# n'ont de code de mesure pH. Renseigner ces trois valeurs (code + plage acceptable) pour
+# activer l'alerte "Alerte pH" (voir README).
 PH_MEASUREMENT_CODE = None
 PH_MIN = None
 PH_MAX = None
 
 
 def get_node(tank, sensor):
-    """sensor is the sensor dict; matched by name first, then eui64 (for nameless sensors)."""
+    """Renvoie le côté ("left"/"right") d'un capteur pour une cuve, ou None si non mappé.
+
+    `sensor` est le dict du capteur ; on cherche d'abord par son nom, puis par son eui64
+    (pour les capteurs sans nom).
+    """
     node_map = NODE_MAP.get(tank, {})
     name = (sensor.get("name") or "").strip()
     eui64 = (sensor.get("eui64") or "").strip()

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Supervision Électroformage</title>
+    <!-- Polices Space Grotesk (titres/chiffres) + Inter (texte), chargées via Google Fonts. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -12,17 +13,19 @@
     />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
     <script>
-      // Applied before first paint to avoid a flash of the wrong theme.
+      // Appliqué avant le premier rendu pour éviter un flash du mauvais thème.
       (function () {
         var saved = localStorage.getItem('theme');
         var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
         document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>
+    <!-- Chart.js (graphiques), chargé depuis un CDN. -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   </head>
   <body>
     <div class="wall">
+      <!-- Bandeau supérieur : logo, résumé process, bascule de thème, connexion, alertes, horloge. -->
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">
@@ -60,10 +63,12 @@
         </div>
       </header>
 
+      <!-- Bandeau défilant des alertes (masqué s'il n'y en a aucune). -->
       <div class="alert-ticker" id="alert-ticker" hidden>
         <div class="ticker-track" id="alert-ticker-track"></div>
       </div>
 
+      <!-- Tableau principal des cuves : barre de comparaison, tableau, puis légende. -->
       <section class="panel table-panel">
         <div class="panel-header">
           <div>
@@ -120,6 +125,7 @@
       </section>
     </div>
 
+    <!-- Modal de détail d'une (ou plusieurs) cuve(s) ; le contenu est injecté par le JS. -->
     <div class="modal-backdrop" id="tank-modal-backdrop" hidden>
       <div class="tank-modal" role="dialog" aria-modal="true" aria-label="Détail des cuves">
         <button class="modal-close" id="tank-modal-close" type="button" aria-label="Fermer">&times;</button>
@@ -127,6 +133,7 @@
       </div>
     </div>
 
+    <!-- Petit popover d'alertes ouvert au clic sur le point d'alerte d'une cuve. -->
     <div class="alert-popover" id="alert-popover" hidden>
       <div class="alert-popover-header">
         <span id="alert-popover-title">Cuve</span>

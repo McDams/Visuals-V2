@@ -1,3 +1,6 @@
+/* Feuille de style du dashboard. Le thème (clair/sombre) passe par des variables CSS : le
+   thème sombre est défini ici dans :root, le thème clair les surcharge dans
+   :root[data-theme="light"]. L'attribut data-theme est posé par le JS. */
 :root {
   color-scheme: dark;
   --bg: #080a10;
@@ -13,15 +16,15 @@
   --warn: #f59e0b;
   --critical: #f43f5e;
 
-  /* Readable status text tuned per-theme: dark wants light pastels, light wants darker
-     saturated tones, so these can't just reuse --ok/--warn/--critical directly. */
+  /* Couleurs de texte de statut lisibles, réglées par thème : le sombre veut des pastels
+     clairs, le clair des tons plus saturés — d'où des variables distinctes de --ok/--warn/--critical. */
   --ok-text: #6ee7b7;
   --warn-text: #fcd34d;
   --critical-text: #fda4af;
   --job-text: #c4b5fd;
 
-  /* Distinct categorical colors for the up-to-4 sensor lines on the chart (bright on the
-     dark background), kept away from the automate (lavender) and status hues. */
+  /* Couleurs catégorielles distinctes pour les 4 lignes de capteurs du graphe (vives sur fond
+     sombre), tenues à l'écart de l'automate (lavande) et des teintes de statut. */
   --chart-1: #38bdf8;
   --chart-2: #fb923c;
   --chart-3: #a3e635;
@@ -62,7 +65,7 @@
   --critical-text: #be123c;
   --job-text: #6d28d9;
 
-  /* Deeper variants of the sensor line colors, for contrast on the white background. */
+  /* Variantes plus profondes des couleurs de capteurs, pour le contraste sur fond blanc. */
   --chart-1: #0284c7;
   --chart-2: #ea580c;
   --chart-3: #4d7c0f;
@@ -112,7 +115,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
   min-height: 100vh;
 }
 
-/* ---------- Top bar ---------- */
+/* ---------- Bandeau supérieur ---------- */
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -199,7 +202,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
   100% { transform: scale(2.1); opacity: 0; }
 }
 
-/* ---------- Alert ticker ---------- */
+/* ---------- Bandeau défilant des alertes ---------- */
 .alert-ticker {
   overflow: hidden;
   border-radius: 14px;
@@ -223,7 +226,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .ticker-item--clickable:hover { text-decoration: underline; }
 @keyframes ticker { to { transform: translateX(-100%); } }
 
-/* ---------- Legend ---------- */
+/* ---------- Légende ---------- */
 .legend {
   display: flex; flex-wrap: wrap; gap: 12px 28px;
   padding: 14px 22px; border-top: 1px solid var(--border);
@@ -237,7 +240,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .legend-dot--critical { background: var(--critical); box-shadow: 0 0 6px var(--critical); }
 .legend-dot--unknown { background: var(--muted); }
 
-/* ---------- Compare bar ---------- */
+/* ---------- Barre de comparaison ---------- */
 .compare-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin: 0 22px 14px; padding: 10px 16px; border-radius: 14px;
@@ -254,7 +257,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 #compare-open-btn:hover { opacity: 0.9; }
 #compare-clear-btn:hover { background: var(--surface-tint); }
 
-/* ---------- Tank table ---------- */
+/* ---------- Tableau des cuves ---------- */
 .table-panel { padding: 0; overflow: hidden; }
 .table-panel .panel-header { padding: 20px 22px 14px; margin-bottom: 0; }
 
@@ -311,7 +314,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 
 .table-empty { padding: 30px; text-align: center; }
 
-/* ---------- Tank detail (rendered inside the modal) ---------- */
+/* ---------- Détail d'une cuve (rendu dans le modal) ---------- */
 .status-badge {
   display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
   padding: 5px 12px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
@@ -390,7 +393,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .tank-stat-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tank-stat-value--warn { color: var(--warn-text); }
 
-/* ---------- Tank detail modal ---------- */
+/* ---------- Modal de détail des cuves ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 50;
   background: var(--scrim); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
@@ -452,7 +455,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .modal-alerts-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 4px 0 -4px; }
 .modal-alerts { display: grid; gap: 8px; }
 
-/* ---------- Outages (coupures) ---------- */
+/* ---------- Coupures ---------- */
 .tank-outages {
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px 12px; border-radius: 14px; background: rgba(245, 158, 11, 0.05);
@@ -464,7 +467,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .tank-outage-row:first-child { border-top: none; }
 .tank-outages-empty { margin: 0; font-size: 0.82rem; text-align: center; }
 
-/* ---------- Multi-tank comparison ---------- */
+/* ---------- Comparaison multi-cuves ---------- */
 .modal-compare-title { margin: 0 0 -4px; font-size: 1.05rem; font-weight: 700; }
 .modal-tanks-grid { display: grid; gap: 20px; grid-template-columns: 1fr; }
 .modal-tanks-grid--multi { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); align-items: start; }
@@ -482,7 +485,7 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 
 body.modal-open { overflow: hidden; }
 
-/* ---------- Panels ---------- */
+/* ---------- Panneaux ---------- */
 .panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: 22px; padding: 18px 20px;
   transition: background-color 0.25s ease, border-color 0.25s ease;
@@ -491,7 +494,7 @@ body.modal-open { overflow: hidden; }
 .panel-header h2 { margin: 0; font-size: 1.15rem; font-weight: 700; }
 .panel-sub { color: var(--muted); font-size: 0.85rem; }
 
-/* ---------- Per-tank alert dot + popover ---------- */
+/* ---------- Point d'alerte par cuve + popover ---------- */
 .alert-dot-cell { display: flex; align-items: center; gap: 8px; }
 .alert-dot {
   position: relative;
@@ -536,7 +539,7 @@ body.modal-open { overflow: hidden; }
 .alert-popover-body { display: grid; gap: 4px; max-height: 320px; overflow-y: auto; }
 .alert-popover-empty { padding: 10px 4px; font-size: 0.88rem; }
 
-/* ---------- Alert item (used in the popover and the tank modal) ---------- */
+/* ---------- Élément d'alerte (utilisé dans le popover et le modal) ---------- */
 .alert-item { display: flex; align-items: flex-start; gap: 12px; padding: 9px 10px; border-radius: 12px; }
 .alert-item-icon {
   flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
@@ -551,7 +554,7 @@ body.modal-open { overflow: hidden; }
 .alert-item--major .alert-item-message { font-weight: 600; }
 .alert-item-meta { margin: 3px 0 0; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 
-/* ---------- Responsive ---------- */
+/* ---------- Réactivité (petits écrans) ---------- */
 @media (max-width: 1000px) {
   .tank-nodes { grid-template-columns: 1fr; }
   .modal-chart { height: 260px; }
