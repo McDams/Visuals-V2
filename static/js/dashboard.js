@@ -384,10 +384,15 @@ function renderTankTable() {
           ? `<span class="job-pill${view.job.overrun ? ' job-pill--overrun' : ''}">${view.job.name} · ${formatTime(view.job.start_time)} → ${formatTime(view.job.predicted_end)}</span>`
           : `<span class="job-pill job-pill--stopped">Arrêt depuis ${formatTime(view.job.not_running_since)}</span>`;
 
-      // Temps restant remonté par l'automate (time_remaining, en secondes) ; '--' si la cuve
-      // n'a pas d'automate qui le fournit (KS1/KS3 pour l'instant).
+      // Temps restant remonté par l'automate (time_remaining, en secondes). Affiché uniquement
+      // si la cuve est EN MARCHE (au moins un côté actif) : un temps restant sur une cuve à
+      // l'arrêt n'a pas de sens. '--' sinon (cuve arrêtée, inconnue, ou sans automate KS1/KS3).
+      const tankRunning =
+        view.status === 'en_cours' || view.status === 'noeud_g' || view.status === 'noeud_d';
       const timeRemaining =
-        view.process?.time_remaining != null ? formatDuration(view.process.time_remaining) : '--';
+        tankRunning && view.process?.time_remaining != null
+          ? formatDuration(view.process.time_remaining)
+          : '--';
 
       return `
       <tr class="tank-row${hasMajor ? ' tank-row--alert' : ''}" data-tank="${view.tank}" tabindex="0">
