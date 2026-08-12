@@ -194,11 +194,15 @@ def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_rea
             # On n'expose un horodatage "dernière mesure" que pour un capteur ayant une vraie
             # ligne : la série de secours est datée "maintenant" et paraîtrait faussement fraîche.
             last_seen = points[-1]["time"] if has_data and points else None
+            # "running" (en marche) : le capteur remonte une vraie valeur ET son courant dépasse
+            # le seuil d'arrêt. Sert au cadran 4 zones du tableau (une zone verte = capteur actif).
+            running = has_data and value is not None and value >= STOP_CURRENT_THRESHOLD_A
             latest.append(
                 {
                     "name": sensor.get("name") or sensor.get("id"),
                     "current": value,
                     "reporting": has_data,
+                    "running": running,
                     "last_seen": last_seen.isoformat() if last_seen else None,
                 }
             )

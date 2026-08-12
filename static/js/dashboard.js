@@ -369,6 +369,30 @@ function renderTankTable() {
     return `<span class="node-cell-dot ${dotClass}"></span>${node.avg_current != null ? node.avg_current + ' A' : '--'}${suffix}`;
   };
 
+  // Cadran 4 zones du statut : chaque zone représente un capteur et sa couleur indique s'il est
+  // en marche. Disposition 2×2 : colonne gauche = capteurs du côté gauche, colonne droite = côté
+  // droit. Vert = en marche, rouge = à l'arrêt, gris = pas de données, pointillé = non assigné.
+  const quadClass = (sensor) => {
+    if (!sensor) return 'sensor-quad--empty';
+    if (!sensor.reporting) return 'sensor-quad--nodata';
+    return sensor.running ? 'sensor-quad--running' : 'sensor-quad--stopped';
+  };
+  const quadTitle = (sensor) => {
+    if (!sensor) return 'Non assigné';
+    const etat = !sensor.reporting ? 'pas de données' : sensor.running ? 'en marche' : 'à l’arrêt';
+    return `${sensor.name} : ${etat}`;
+  };
+  const statusCadran = (view) => {
+    const left = view.nodes?.left?.sensors || [];
+    const right = view.nodes?.right?.sensors || [];
+    // Ordre des zones : G1, D1, G2, D2 (rempli ligne par ligne dans la grille 2×2).
+    const cells = [left[0], right[0], left[1], right[1]];
+    const zones = cells
+      .map((s) => `<span class="sensor-quad ${quadClass(s)}" title="${quadTitle(s)}"></span>`)
+      .join('');
+    return `<div class="status-cadran" role="img" aria-label="État des 4 capteurs">${zones}</div>`;
+  };
+
   tbody.innerHTML = state.tankViews
     .map((view) => {
       const stats = statsByTank[view.tank] || {};
@@ -378,11 +402,10 @@ function renderTankTable() {
       const hasMajor = tankAlerts.some((a) => a.severity === 'major');
       const hasProblem = tankAlerts.length > 0;
 
-      const jobCell = !view.job
-        ? '<span class="muted">--</span>'
-        : view.job.name
-          ? `<span class="job-pill${view.job.overrun ? ' job-pill--overrun' : ''}">${view.job.name} · ${formatTime(view.job.start_time)} → ${formatTime(view.job.predicted_end)}</span>`
-          : `<span class="job-pill job-pill--stopped">Arrêt depuis ${formatTime(view.job.not_running_since)}</span>`;
+      // Colonne Job masquée temporairement : pas encore de valeurs fiables à afficher. Le job
+      // reste calculé côté backend (alertes de dépassement de durée) ; on n'affiche que "--" ici.
+      // À réactiver quand les données de job seront correctes.
+      const jobCell = '<span class="muted">--</span>';
 
       // Temps restant remonté par l'automate (time_remaining, en secondes). Affiché uniquement
       // si la cuve est EN MARCHE (au moins un côté actif) : un temps restant sur une cuve à
@@ -406,7 +429,12 @@ function renderTankTable() {
             </div>
           </div>
         </td>
-        <td><span class="status-badge status-badge--${visual}">${statusLabel}</span></td>
+        <td>
+          <div class="status-cell">
+            ${statusCadran(view)}
+            <span class="status-badge status-badge--${visual}">${statusLabel}</span>
+          </div>
+        </td>
         <td>
           <div class="alert-dot-cell">
             <span class="alert-dot${hasProblem ? ' alert-dot--problem' : ''}" data-tank="${view.tank}" title="${hasProblem ? tankAlerts.length + ' alerte(s)' : 'Aucune alerte'}"></span>

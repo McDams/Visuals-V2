@@ -239,6 +239,11 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .legend-dot--warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
 .legend-dot--critical { background: var(--critical); box-shadow: 0 0 6px var(--critical); }
 .legend-dot--unknown { background: var(--muted); }
+/* Pastilles carrées de la légende du cadran capteurs (mêmes couleurs que les zones du tableau). */
+.legend-quad { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.legend-quad--running { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
+.legend-quad--stopped { background: var(--critical); }
+.legend-quad--nodata { background: var(--muted); opacity: 0.35; }
 
 /* ---------- Barre de comparaison ---------- */
 .compare-bar {
@@ -300,6 +305,19 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .node-cell-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .node-cell-dot--ok { background: var(--ok); }
 .node-cell-dot--warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+
+/* Cellule Statut : cadran 4 zones (état des capteurs) + badge texte, alignés horizontalement. */
+.status-cell { display: flex; align-items: center; gap: 10px; }
+/* Cadran 2×2 : colonne gauche = capteurs gauche, colonne droite = capteurs droite. */
+.status-cadran {
+  display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+  gap: 2px; width: 26px; height: 26px; flex-shrink: 0;
+}
+.sensor-quad { border-radius: 3px; background: var(--muted); }
+.sensor-quad--running { background: var(--ok); box-shadow: 0 0 5px var(--ok); }   /* capteur en marche */
+.sensor-quad--stopped { background: var(--critical); }                            /* capteur à l'arrêt */
+.sensor-quad--nodata { background: var(--muted); opacity: 0.35; }                 /* pas de données */
+.sensor-quad--empty { background: transparent; border: 1px dashed var(--border); } /* zone non assignée */
 
 .job-pill {
   display: inline-flex; padding: 4px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 700;
