@@ -353,7 +353,7 @@ function renderTankTable() {
   setText('table-subtitle', state.tankViews.length ? `${state.tankViews.length} cuve(s) suivie(s) · cliquez une ligne pour le détail` : 'Aucune cuve');
 
   if (state.tankViews.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="muted table-empty">Aucune cuve disponible.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="muted table-empty">Aucune cuve disponible.</td></tr>';
     renderCompareBar();
     return;
   }
@@ -384,6 +384,11 @@ function renderTankTable() {
           ? `<span class="job-pill${view.job.overrun ? ' job-pill--overrun' : ''}">${view.job.name} · ${formatTime(view.job.start_time)} → ${formatTime(view.job.predicted_end)}</span>`
           : `<span class="job-pill job-pill--stopped">Arrêt depuis ${formatTime(view.job.not_running_since)}</span>`;
 
+      // Temps restant remonté par l'automate (time_remaining, en secondes) ; '--' si la cuve
+      // n'a pas d'automate qui le fournit (KS1/KS3 pour l'instant).
+      const timeRemaining =
+        view.process?.time_remaining != null ? formatDuration(view.process.time_remaining) : '--';
+
       return `
       <tr class="tank-row${hasMajor ? ' tank-row--alert' : ''}" data-tank="${view.tank}" tabindex="0">
         <td class="select-cell"><input type="checkbox" class="tank-select" data-tank="${view.tank}" aria-label="Sélectionner ${view.tank}"${state.compareTanks.has(view.tank) ? ' checked' : ''} /></td>
@@ -407,6 +412,7 @@ function renderTankTable() {
         <td class="tabular">${nodeCell(view.nodes?.left)}</td>
         <td class="tabular">${nodeCell(view.nodes?.right)}</td>
         <td>${jobCell}</td>
+        <td class="tabular">${timeRemaining}</td>
         <td class="row-action">›</td>
       </tr>`;
     })
