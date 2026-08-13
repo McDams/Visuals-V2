@@ -53,6 +53,12 @@ SENSOR_STALE_SECONDS = 60
 # capteur-vs-moyenne-du-côté.
 IMBALANCE_THRESHOLD_A = 5.0
 
+# Seuil d'écart MAX entre les capteurs d'un même côté (max - min). Au-delà, le côté est signalé
+# comme déséquilibré dans le tableau (pastille + valeurs en rouge). C'est l'indicateur "métier"
+# demandé pour l'électroformage : un écart de répartition >10 A entre deux branches parallèles
+# trahit un contact desserré, une anode décrochée ou un dépôt inégal.
+SIDE_SPREAD_THRESHOLD_A = 10.0
+
 # Seuil d'alerte "Courant élevé" (moyenne d'une cuve). Dimensionné pour le courant réel de
 # production (les jobs tournent entre 75 et 200 A) — ne pas le rabaisser vers quelques ampères,
 # ce n'était valable que pour les données de démo CSV synthétiques (~4 A).

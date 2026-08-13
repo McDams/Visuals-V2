@@ -16,6 +16,7 @@ from services.tank_config import (
     IMBALANCE_THRESHOLD_A,
     JOBS,
     OUTAGE_GAP_SECONDS,
+    SIDE_SPREAD_THRESHOLD_A,
     STOP_CURRENT_THRESHOLD_A,
     STOP_DURATION_SECONDS,
     VOLTAGE_CODES,
@@ -217,10 +218,17 @@ def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_rea
         balanced = all(item["delta"] is not None and abs(item["delta"]) <= IMBALANCE_THRESHOLD_A for item in latest) if known_values else None
         reporting_count = sum(1 for item in latest if item["reporting"])
 
+        # Écart max entre capteurs du côté (max - min) : indicateur "métier" affiché dans le
+        # tableau. Au-delà de SIDE_SPREAD_THRESHOLD_A (10 A), le côté est signalé déséquilibré.
+        spread = round(max(known_values) - min(known_values), 2) if len(known_values) >= 2 else None
+        imbalanced = spread is not None and spread > SIDE_SPREAD_THRESHOLD_A
+
         return {
             "sensors": latest,
             "avg_current": avg,
             "balanced": balanced,
+            "spread": spread,
+            "imbalanced": imbalanced,
             "reporting_count": reporting_count,
             "sensor_count": len(latest),
         }

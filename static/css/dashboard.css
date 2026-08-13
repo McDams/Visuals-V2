@@ -306,6 +306,19 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .node-cell-dot--ok { background: var(--ok); }
 .node-cell-dot--warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
 
+/* Cellule "Capteurs Gauche/Droite" : une ligne par capteur (nom + courant) au lieu de la moyenne. */
+.sensor-cell { display: flex; flex-direction: column; gap: 2px; }
+.sensor-line { display: flex; justify-content: space-between; gap: 12px; font-size: 0.82rem; }
+.sensor-line-name { color: var(--muted); }
+.sensor-line-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+.sensor-line--nodata { opacity: 0.45; }                         /* capteur sans données */
+.sensor-line--imbalanced .sensor-line-val { color: var(--critical-text); }  /* écart > 10 A */
+/* Bandeau de signal affiché sous les capteurs quand l'écart dépasse le seuil. */
+.sensor-signal {
+  margin-top: 3px; font-size: 0.72rem; font-weight: 700; color: var(--critical-text);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+
 /* Cellule Statut : cadran 4 zones (état des capteurs) + badge texte, alignés horizontalement. */
 .status-cell { display: flex; align-items: center; gap: 10px; }
 /* Cadran 2×2 : colonne gauche = capteurs gauche, colonne droite = capteurs droite. */

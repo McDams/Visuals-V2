@@ -360,13 +360,25 @@ function renderTankTable() {
 
   // Index cuve -> KPI (courant/tension actuels, etc.).
   const statsByTank = Object.fromEntries(state.tankStats.map((t) => [t.tank, t]));
-  // Rendu compact d'une cellule de côté : pastille (équilibre/santé) + courant moyen.
+  // Rendu d'une cellule de côté : courant de CHAQUE capteur (au lieu de la moyenne), plus un
+  // signal de déséquilibre quand l'écart max entre capteurs du côté dépasse 10 A (node.imbalanced).
   const nodeCell = (node) => {
     if (!node) return '<span class="muted">Non assigné</span>';
-    const missing = node.sensor_count - node.reporting_count;
-    const dotClass = missing > 0 ? 'node-cell-dot--warn' : node.balanced === false ? 'node-cell-dot--warn' : 'node-cell-dot--ok';
-    const suffix = missing > 0 ? ` <span class="muted">(${node.reporting_count}/${node.sensor_count})</span>` : '';
-    return `<span class="node-cell-dot ${dotClass}"></span>${node.avg_current != null ? node.avg_current + ' A' : '--'}${suffix}`;
+    const imbalanced = node.imbalanced === true;
+    // Une ligne par capteur : nom + courant. En rouge si le côté est déséquilibré, gris si le
+    // capteur ne remonte pas de données.
+    const rows = (node.sensors || [])
+      .map((s) => {
+        const val = s.current != null ? `${s.current} A` : '--';
+        const cls = !s.reporting ? 'sensor-line--nodata' : imbalanced ? 'sensor-line--imbalanced' : '';
+        return `<div class="sensor-line ${cls}"><span class="sensor-line-name">${s.name}</span><span class="sensor-line-val">${val}</span></div>`;
+      })
+      .join('');
+    // Bandeau de signal quand l'écart dépasse le seuil (⚠ + valeur de l'écart).
+    const signal = imbalanced
+      ? `<div class="sensor-signal" title="Écart entre capteurs supérieur à 10 A">⚠ Écart ${node.spread} A</div>`
+      : '';
+    return `<div class="sensor-cell">${rows || '<span class="muted">--</span>'}${signal}</div>`;
   };
 
   // Cadran 4 zones du statut : chaque zone représente un capteur et sa couleur indique s'il est
