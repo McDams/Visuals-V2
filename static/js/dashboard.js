@@ -25,14 +25,6 @@ const CURRENT_AXIS_MAX = 220;
 const STALE_MS = 60000;
 
 // Libellés lisibles des statuts combinés d'une cuve.
-const STATUS_LABELS = {
-  en_cours: 'En cours',
-  noeud_g: 'Noeud-G',
-  noeud_d: 'Noeud-D',
-  arret: 'Arrêt',
-  inconnu: 'Inconnu',
-};
-
 // Instantané des dernières données reçues, conservé pour pouvoir ouvrir/rafraîchir le modal
 // sans nouvelle requête, et pour qu'il reste à jour pendant le cycle de polling suivant.
 const state = {
@@ -344,6 +336,32 @@ function refreshAlertPopover() {
   if (body) body.innerHTML = popoverContentHtml(tank);
 }
 
+// --- Cadran 4 zones du statut (partagé tableau + modal) ---
+// Chaque zone représente un capteur ; sa couleur indique l'état. Disposition 2×2 : colonne
+// gauche = capteurs du côté gauche, colonne droite = côté droit. Vert = en marche, rouge = à
+// l'arrêt, gris = pas de données, pointillé = non assigné.
+function quadClass(sensor) {
+  if (!sensor) return 'sensor-quad--empty';
+  if (!sensor.reporting) return 'sensor-quad--nodata';
+  return sensor.running ? 'sensor-quad--running' : 'sensor-quad--stopped';
+}
+function quadTitle(sensor) {
+  if (!sensor) return 'Non assigné';
+  const etat = !sensor.reporting ? 'pas de données' : sensor.running ? 'en marche' : 'à l’arrêt';
+  return `${sensor.name} : ${etat}`;
+}
+function statusCadran(view) {
+  const left = view.nodes?.left?.sensors || [];
+  const right = view.nodes?.right?.sensors || [];
+  // Ordre des zones : G1, D1, G2, D2 (rempli ligne par ligne dans la grille 2×2). Chaque zone
+  // porte le NOM du capteur.
+  const cells = [left[0], right[0], left[1], right[1]];
+  const zones = cells
+    .map((s) => `<span class="sensor-quad ${quadClass(s)}" title="${quadTitle(s)}">${s ? s.name : ''}</span>`)
+    .join('');
+  return `<div class="status-cadran" role="img" aria-label="État des 4 capteurs">${zones}</div>`;
+}
+
 // Construit le tableau principal des cuves (une ligne par cuve) et déclenche la barre de
 // comparaison. Rappelé à chaque cycle de rafraîchissement.
 function renderTankTable() {
@@ -377,32 +395,6 @@ function renderTankTable() {
       ? `<div class="sensor-signal" title="Écart entre capteurs supérieur à 10 A">⚠ Écart ${node.spread} A</div>`
       : '';
     return `<div class="sensor-cell">${rows || '<span class="muted">--</span>'}${signal}</div>`;
-  };
-
-  // Cadran 4 zones du statut : chaque zone représente un capteur et sa couleur indique s'il est
-  // en marche. Disposition 2×2 : colonne gauche = capteurs du côté gauche, colonne droite = côté
-  // droit. Vert = en marche, rouge = à l'arrêt, gris = pas de données, pointillé = non assigné.
-  const quadClass = (sensor) => {
-    if (!sensor) return 'sensor-quad--empty';
-    if (!sensor.reporting) return 'sensor-quad--nodata';
-    return sensor.running ? 'sensor-quad--running' : 'sensor-quad--stopped';
-  };
-  const quadTitle = (sensor) => {
-    if (!sensor) return 'Non assigné';
-    const etat = !sensor.reporting ? 'pas de données' : sensor.running ? 'en marche' : 'à l’arrêt';
-    return `${sensor.name} : ${etat}`;
-  };
-  const statusCadran = (view) => {
-    const left = view.nodes?.left?.sensors || [];
-    const right = view.nodes?.right?.sensors || [];
-    // Ordre des zones : G1, D1, G2, D2 (rempli ligne par ligne dans la grille 2×2). Chaque zone
-    // porte le NOM du capteur ; sa couleur indique l'état (vert = en marche, rouge = à l'arrêt,
-    // gris = pas de données, pointillé = non assigné).
-    const cells = [left[0], right[0], left[1], right[1]];
-    const zones = cells
-      .map((s) => `<span class="sensor-quad ${quadClass(s)}" title="${quadTitle(s)}">${s ? s.name : ''}</span>`)
-      .join('');
-    return `<div class="status-cadran" role="img" aria-label="État des 4 capteurs">${zones}</div>`;
   };
 
   // Cellule "Écart G/D" : écarts croisés gauche×droite (voir _build_cross_gaps). On n'affiche un
@@ -591,8 +583,6 @@ function renderTankModal() {
 // Génère le HTML complet du bloc de détail d'une cuve (en-tête, consigne, sélecteur de
 // période, graphe, coupures, tableaux de côté, job, process, pied de stats, alertes liées).
 function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }) {
-  const visual = statusVisual(view, state.alerts);
-  const statusLabel = STATUS_LABELS[view.status] || 'Inconnu';
   const nodesHtml = `<div class="tank-nodes">${renderNodeTable('Noeud Gauche', view.nodes?.left)}${renderNodeTable('Noeud Droite', view.nodes?.right)}</div>`;
 
   const lastSeenMs = view.last_seen ? new Date(view.last_seen).getTime() : NaN;
@@ -705,7 +695,7 @@ function tankDetailBlockHtml({ tank, view, stats, period, cachedHistory, multi }
           ${lastSeenHtml}
         </div>
         <div class="modal-header-actions">
-          <span class="status-badge status-badge--${visual}">${statusLabel}</span>
+          ${statusCadran(view)}
           ${multi ? `<button type="button" class="modal-tank-remove" data-remove-tank="${tank}" aria-label="Retirer ${tank}">&times;</button>` : ''}
         </div>
       </header>
