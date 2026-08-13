@@ -353,7 +353,7 @@ function renderTankTable() {
   setText('table-subtitle', state.tankViews.length ? `${state.tankViews.length} cuve(s) suivie(s) · cliquez une ligne pour le détail` : 'Aucune cuve');
 
   if (state.tankViews.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="muted table-empty">Aucune cuve disponible.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="muted table-empty">Aucune cuve disponible.</td></tr>';
     renderCompareBar();
     return;
   }
@@ -397,19 +397,34 @@ function renderTankTable() {
   const statusCadran = (view) => {
     const left = view.nodes?.left?.sensors || [];
     const right = view.nodes?.right?.sensors || [];
-    // Ordre des zones : G1, D1, G2, D2 (rempli ligne par ligne dans la grille 2×2).
+    // Ordre des zones : G1, D1, G2, D2 (rempli ligne par ligne dans la grille 2×2). Chaque zone
+    // porte le NOM du capteur ; sa couleur indique l'état (vert = en marche, rouge = à l'arrêt,
+    // gris = pas de données, pointillé = non assigné).
     const cells = [left[0], right[0], left[1], right[1]];
     const zones = cells
-      .map((s) => `<span class="sensor-quad ${quadClass(s)}" title="${quadTitle(s)}"></span>`)
+      .map((s) => `<span class="sensor-quad ${quadClass(s)}" title="${quadTitle(s)}">${s ? s.name : ''}</span>`)
       .join('');
     return `<div class="status-cadran" role="img" aria-label="État des 4 capteurs">${zones}</div>`;
+  };
+
+  // Cellule "Écart G/D" : écarts croisés gauche×droite (voir _build_cross_gaps). Chaque ligne
+  // "G ↔ D : N A" passe en rouge quand l'écart dépasse 10 A (p.over).
+  const gapCell = (pairs) => {
+    if (!pairs || !pairs.length) return '<span class="muted">--</span>';
+    const rows = pairs
+      .map((p) => {
+        const val = p.gap != null ? `${p.gap} A` : '--';
+        const cls = p.over ? 'gap-line--over' : '';
+        return `<div class="gap-line ${cls}"><span class="gap-line-pair">${p.left} ↔ ${p.right}</span><span class="gap-line-val">${val}</span></div>`;
+      })
+      .join('');
+    return `<div class="gap-cell">${rows}</div>`;
   };
 
   tbody.innerHTML = state.tankViews
     .map((view) => {
       const stats = statsByTank[view.tank] || {};
       const visual = statusVisual(view, state.alerts);
-      const statusLabel = STATUS_LABELS[view.status] || 'Inconnu';
       const tankAlerts = alertsForTank(view.tank);
       const hasMajor = tankAlerts.some((a) => a.severity === 'major');
       const hasProblem = tankAlerts.length > 0;
@@ -444,7 +459,6 @@ function renderTankTable() {
         <td>
           <div class="status-cell">
             ${statusCadran(view)}
-            <span class="status-badge status-badge--${visual}">${statusLabel}</span>
           </div>
         </td>
         <td>
@@ -455,6 +469,7 @@ function renderTankTable() {
         </td>
         <td class="tabular">${stats.latest_current ?? '--'} A<br /><span class="muted">${stats.latest_voltage ?? '--'} V</span></td>
         <td class="tabular">${nodeCell(view.nodes?.left)}</td>
+        <td class="tabular">${gapCell(view.cross_gaps)}</td>
         <td class="tabular">${nodeCell(view.nodes?.right)}</td>
         <td>${jobCell}</td>
         <td class="tabular">${timeRemaining}</td>

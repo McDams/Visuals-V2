@@ -321,16 +321,30 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 
 /* Cellule Statut : cadran 4 zones (état des capteurs) + badge texte, alignés horizontalement. */
 .status-cell { display: flex; align-items: center; gap: 10px; }
-/* Cadran 2×2 : colonne gauche = capteurs gauche, colonne droite = capteurs droite. */
+/* Cadran 2×2 : colonne gauche = capteurs gauche, colonne droite = capteurs droite. Chaque zone
+   porte le nom du capteur ; les zones sont agrandies pour rester lisibles. */
 .status-cadran {
   display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
-  gap: 2px; width: 26px; height: 26px; flex-shrink: 0;
+  gap: 2px; width: 52px; height: 52px; flex-shrink: 0;
 }
-.sensor-quad { border-radius: 3px; background: var(--muted); }
+.sensor-quad {
+  border-radius: 4px; background: var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.72rem; font-weight: 700; line-height: 1;
+  color: #fff; overflow: hidden; text-align: center;
+}
 .sensor-quad--running { background: var(--ok); box-shadow: 0 0 5px var(--ok); }   /* capteur en marche */
 .sensor-quad--stopped { background: var(--critical); }                            /* capteur à l'arrêt */
-.sensor-quad--nodata { background: var(--muted); opacity: 0.35; }                 /* pas de données */
+.sensor-quad--nodata { background: var(--muted); opacity: 0.5; }                  /* pas de données */
 .sensor-quad--empty { background: transparent; border: 1px dashed var(--border); } /* zone non assignée */
+
+/* Cellule "Écart G/D" : écarts croisés gauche×droite, une ligne par paire. */
+.gap-cell { display: flex; flex-direction: column; gap: 2px; }
+.gap-line { display: flex; justify-content: space-between; gap: 10px; font-size: 0.8rem; }
+.gap-line-pair { color: var(--muted); white-space: nowrap; }
+.gap-line-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+.gap-line--over .gap-line-val,
+.gap-line--over .gap-line-pair { color: var(--critical-text); font-weight: 700; }  /* écart > 10 A */
 
 .job-pill {
   display: inline-flex; padding: 4px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 700;

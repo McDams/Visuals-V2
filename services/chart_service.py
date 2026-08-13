@@ -20,6 +20,7 @@ from services.tank_config import (
     STOP_CURRENT_THRESHOLD_A,
     STOP_DURATION_SECONDS,
     VOLTAGE_CODES,
+    display_name,
     get_node,
 )
 
@@ -181,7 +182,7 @@ def _tank_status(left_ids, right_ids, all_manual_ids, series_map):
     return "arret" if all_stopped else "en_cours"
 
 
-def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_real_data):
+def _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_with_real_data):
     """Construit le tableau de répartition de chaque côté (gauche/droite) : dernière valeur de
     chaque capteur, écart à la moyenne du côté, équilibre, et nombre de capteurs qui remontent."""
     def _table(node_sensors):
@@ -200,7 +201,7 @@ def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_rea
             running = has_data and value is not None and value >= STOP_CURRENT_THRESHOLD_A
             latest.append(
                 {
-                    "name": sensor.get("name") or sensor.get("id"),
+                    "name": display_name(tank, sensor),
                     "current": value,
                     "reporting": has_data,
                     "running": running,
@@ -234,6 +235,31 @@ def _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_rea
         }
 
     return {"left": _table(left_sensors), "right": _table(right_sensors)}
+
+
+def _build_cross_gaps(nodes):
+    """Écarts CROISÉS entre les capteurs du côté gauche et ceux du côté droit : pour chaque
+    capteur de gauche × chaque capteur de droite, l'écart de courant en valeur absolue. Sert à
+    la colonne "Écart G/D". Ex. KS1 (gauche 13/14, droite 11/12) → 13-11, 13-12, 14-11, 14-12.
+    Un écart supérieur à SIDE_SPREAD_THRESHOLD_A (10 A) est signalé (over = True)."""
+    left = (nodes.get("left") or {}).get("sensors") or []
+    right = (nodes.get("right") or {}).get("sensors") or []
+    pairs = []
+    for left_sensor in left:
+        for right_sensor in right:
+            if left_sensor["current"] is None or right_sensor["current"] is None:
+                gap = None
+            else:
+                gap = round(abs(left_sensor["current"] - right_sensor["current"]), 2)
+            pairs.append(
+                {
+                    "left": left_sensor["name"],
+                    "right": right_sensor["name"],
+                    "gap": gap,
+                    "over": gap is not None and gap > SIDE_SPREAD_THRESHOLD_A,
+                }
+            )
+    return pairs
 
 
 def _matching_job(value):
@@ -491,7 +517,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             [s["id"] for s in selected_sensors],
             series_map,
         )
-        nodes = _build_node_tables(left_sensors, right_sensors, series_map, sensors_with_real_data)
+        nodes = _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_with_real_data)
+        cross_gaps = _build_cross_gaps(nodes)
         sensors_reporting = sum(1 for s in selected_sensors if s["id"] in sensors_with_real_data)
         # "Actif" (courant >= STOP_CURRENT_THRESHOLD_A) est plus strict que "remonte des données"
         # (a une ligne réelle) : un capteur peut envoyer des données alors que son côté est à
@@ -508,7 +535,7 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
 
         series = [
             {
-                "label": sensor.get("name") or sensor.get("id") or "Capteur inconnu",
+                "label": display_name(tank, sensor),
                 "points": [
                     {
                         "time": item["time"].strftime("%H:%M:%S"),
@@ -540,10 +567,11 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 "tank": tank,
                 "automation": automation.get("name") if automation else None,
                 "title": f"{tank} / {automation.get('name') if automation else 'Aucun automate'}",
-                "sensors": [sensor.get("name") or sensor.get("id") or "Capteur inconnu" for sensor in selected_sensors],
+                "sensors": [display_name(tank, sensor) for sensor in selected_sensors],
                 "series": series,
                 "status": status,
                 "nodes": nodes,
+                "cross_gaps": cross_gaps,
                 "job": job,
                 "sensors_reporting": sensors_reporting,
                 "sensors_total": len(selected_sensors),

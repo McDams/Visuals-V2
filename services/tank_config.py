@@ -22,6 +22,32 @@ NODE_MAP = {
     "KS4": {"3": "left", "7": "left", "1": "right", "2": "right"},
 }
 
+# Noms d'affichage forcés par cuve (clé = "name" OU "eui64" du capteur, comme NODE_MAP).
+# Provisoire : les capteurs de KS2 n'ont pas de nom lisible en base (seulement un eui64), on
+# les renomme donc côté droit A/B et côté gauche C/D pour l'affichage. À retirer/ajuster quand
+# les vrais noms seront disponibles.
+SENSOR_DISPLAY_NAMES = {
+    "KS2": {
+        "F4CE36AC7ADAD99C": "A",  # droite
+        "F4CE3672AAE9A258": "B",  # droite
+        "F4CE3615B2076C01": "C",  # gauche
+        "F4CE36735C9A8290": "D",  # gauche
+    },
+}
+
+
+def display_name(tank, sensor):
+    """Nom lisible d'un capteur pour l'affichage : d'abord un éventuel alias forcé
+    (SENSOR_DISPLAY_NAMES, cherché par name puis eui64), sinon le name, sinon l'id."""
+    overrides = SENSOR_DISPLAY_NAMES.get(tank, {})
+    name = (sensor.get("name") or "").strip()
+    eui64 = (sensor.get("eui64") or "").strip()
+    if name in overrides:
+        return overrides[name]
+    if eui64 in overrides:
+        return overrides[eui64]
+    return sensor.get("name") or sensor.get("id") or "Capteur inconnu"
+
 # Codes de mesure porteurs d'une valeur de COURANT. D'après les descriptions de
 # measurement_types, "current_measured" est spécifique à l'automate, tandis que les capteurs
 # individuels remontent sous le code générique "current" ("sensor supplied") — il faut
