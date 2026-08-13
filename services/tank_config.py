@@ -65,6 +65,11 @@ VOLTAGE_CODES = {"voltage_measured"}
 # attendue par capteur = consigne totale / nombre de capteurs réellement en marche).
 CURRENT_SETPOINT_CODE = "current_setpoint"
 
+# Code de mesure de la consigne de TENSION de l'automate ("Voltage setpoint automaton").
+# Affichée telle quelle dans la colonne "Consigne" (elle ne change pas pendant le fonctionnement).
+# Seuls les automates KS2 et KS4 la remontent aujourd'hui ; KS1/KS3 n'ont pas d'automate exploité.
+VOLTAGE_SETPOINT_CODE = "voltage_setpoint"
+
 # Une cuve/un côté est considéré à l'arrêt dès que son courant reste sous ce seuil pendant
 # plus de STOP_DURATION_SECONDS.
 STOP_CURRENT_THRESHOLD_A = 10.0

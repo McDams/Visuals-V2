@@ -13,6 +13,7 @@ from services.data_source import (
 from services.tank_config import (
     CURRENT_CODES,
     CURRENT_SETPOINT_CODE,
+    VOLTAGE_SETPOINT_CODE,
     IMBALANCE_THRESHOLD_A,
     JOBS,
     OUTAGE_GAP_SECONDS,
@@ -241,9 +242,15 @@ def _build_cross_gaps(nodes):
     """Écarts CROISÉS entre les capteurs du côté gauche et ceux du côté droit : pour chaque
     capteur de gauche × chaque capteur de droite, l'écart de courant en valeur absolue. Sert à
     la colonne "Écart G/D". Ex. KS1 (gauche 13/14, droite 11/12) → 13-11, 13-12, 14-11, 14-12.
-    Un écart supérieur à SIDE_SPREAD_THRESHOLD_A (10 A) est signalé (over = True)."""
+
+    Ces écarts traduisent les liaisons entre les deux côtés et n'ont de sens que si TOUS les
+    capteurs sont en marche : on renvoie donc un drapeau "active" (tous en marche) que l'UI
+    utilise pour n'afficher les écarts que dans ce cas, et uniquement ceux supérieurs à
+    SIDE_SPREAD_THRESHOLD_A (10 A, flag "over")."""
     left = (nodes.get("left") or {}).get("sensors") or []
     right = (nodes.get("right") or {}).get("sensors") or []
+    all_sensors = left + right
+    active = len(all_sensors) > 0 and all(s.get("running") for s in all_sensors)
     pairs = []
     for left_sensor in left:
         for right_sensor in right:
@@ -259,7 +266,7 @@ def _build_cross_gaps(nodes):
                     "over": gap is not None and gap > SIDE_SPREAD_THRESHOLD_A,
                 }
             )
-    return pairs
+    return {"active": active, "pairs": pairs}
 
 
 def _matching_job(value):
@@ -373,15 +380,16 @@ def _select_tank_sensors(tank_sensors):
     return selected[:4]
 
 
-def _latest_setpoint(rows, measurement_types, sensor_ids):
-    """Dernière valeur de consigne de courant (A) remontée par l'un des capteurs donnés."""
+def _latest_setpoint(rows, measurement_types, sensor_ids, code=CURRENT_SETPOINT_CODE):
+    """Dernière valeur de consigne (A ou V selon `code`) remontée par l'un des capteurs donnés.
+    Les mesures sont en milli-unités, converties en unité de base (÷1000)."""
     latest_time = None
     latest_value = None
     for row in rows:
         if row.get("sensor_id") not in sensor_ids:
             continue
         measurement_type = measurement_types.get(row.get("measurement_type_id"), {})
-        if measurement_type.get("code") != CURRENT_SETPOINT_CODE:
+        if measurement_type.get("code") != code:
             continue
         parsed_time = _parse_time(row.get("time"))
         value = _parse_float(row.get("value_num"))
@@ -450,7 +458,13 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         if not tank_sensors:
             continue
 
-        setpoint_total = _latest_setpoint(rows, measurement_types, {s["id"] for s in tank_sensors})
+        tank_sensor_ids = {s["id"] for s in tank_sensors}
+        setpoint_total = _latest_setpoint(rows, measurement_types, tank_sensor_ids)
+        # Consigne de TENSION de l'automate (V) : affichée telle quelle dans la colonne Consigne.
+        # None pour les cuves sans automate exploité (KS1/KS3) -> rien affiché côté UI.
+        voltage_setpoint = _latest_setpoint(
+            rows, measurement_types, tank_sensor_ids, code=VOLTAGE_SETPOINT_CODE
+        )
         automation, selected_sensors = _resolve_tank_sensors(tank, sensors, current_counts)
 
         # series_map : une liste de points {time, value} par capteur sélectionné (+ automate).
@@ -584,6 +598,8 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                     "per_sensor": round(setpoint_total / sensors_active, 2)
                     if setpoint_total is not None and sensors_active > 0
                     else None,
+                    # Consigne de tension de l'automate (V), affichée dans la colonne Consigne.
+                    "voltage": round(voltage_setpoint, 2) if voltage_setpoint is not None else None,
                 },
             }
         )

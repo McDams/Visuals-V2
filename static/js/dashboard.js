@@ -358,8 +358,6 @@ function renderTankTable() {
     return;
   }
 
-  // Index cuve -> KPI (courant/tension actuels, etc.).
-  const statsByTank = Object.fromEntries(state.tankStats.map((t) => [t.tank, t]));
   // Rendu d'une cellule de côté : courant de CHAQUE capteur (au lieu de la moyenne), plus un
   // signal de déséquilibre quand l'écart max entre capteurs du côté dépasse 10 A (node.imbalanced).
   const nodeCell = (node) => {
@@ -407,23 +405,25 @@ function renderTankTable() {
     return `<div class="status-cadran" role="img" aria-label="État des 4 capteurs">${zones}</div>`;
   };
 
-  // Cellule "Écart G/D" : écarts croisés gauche×droite (voir _build_cross_gaps). Chaque ligne
-  // "G ↔ D : N A" passe en rouge quand l'écart dépasse 10 A (p.over).
-  const gapCell = (pairs) => {
-    if (!pairs || !pairs.length) return '<span class="muted">--</span>';
-    const rows = pairs
-      .map((p) => {
-        const val = p.gap != null ? `${p.gap} A` : '--';
-        const cls = p.over ? 'gap-line--over' : '';
-        return `<div class="gap-line ${cls}"><span class="gap-line-pair">${p.left} ↔ ${p.right}</span><span class="gap-line-val">${val}</span></div>`;
-      })
+  // Cellule "Écart G/D" : écarts croisés gauche×droite (voir _build_cross_gaps). On n'affiche un
+  // écart QUE si (1) tous les capteurs de la cuve sont en marche (data.active) et (2) l'écart
+  // dépasse 10 A (p.over). Sinon rien : ces écarts n'ont de sens que cuve entièrement active, et
+  // seuls les dépassements sont pertinents à signaler.
+  const gapCell = (data) => {
+    if (!data || !data.active) return '<span class="muted">--</span>';
+    const over = (data.pairs || []).filter((p) => p.over);
+    if (!over.length) return '<span class="muted">--</span>';
+    const rows = over
+      .map(
+        (p) =>
+          `<div class="gap-line gap-line--over"><span class="gap-line-pair">${p.left} ↔ ${p.right}</span><span class="gap-line-val">${p.gap} A</span></div>`
+      )
       .join('');
     return `<div class="gap-cell">${rows}</div>`;
   };
 
   tbody.innerHTML = state.tankViews
     .map((view) => {
-      const stats = statsByTank[view.tank] || {};
       const visual = statusVisual(view, state.alerts);
       const tankAlerts = alertsForTank(view.tank);
       const hasMajor = tankAlerts.some((a) => a.severity === 'major');
@@ -467,7 +467,7 @@ function renderTankTable() {
             ${hasProblem ? `<span class="alert-dot-count alert-dot-count--problem">${tankAlerts.length}</span>` : ''}
           </div>
         </td>
-        <td class="tabular">${stats.latest_current ?? '--'} A<br /><span class="muted">${stats.latest_voltage ?? '--'} V</span></td>
+        <td class="tabular">${view.setpoint?.voltage != null ? view.setpoint.voltage + ' V' : '<span class="muted">--</span>'}</td>
         <td class="tabular">${nodeCell(view.nodes?.left)}</td>
         <td class="tabular">${gapCell(view.cross_gaps)}</td>
         <td class="tabular">${nodeCell(view.nodes?.right)}</td>

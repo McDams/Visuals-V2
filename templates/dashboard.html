@@ -105,30 +105,26 @@
             </tbody>
           </table>
         </div>
+        <!-- Légende : une carte par colonne, chacune décrivant ses propres codes couleur. -->
         <div class="legend">
           <div class="legend-group">
-            <span class="legend-title">Statut</span>
-            <span class="legend-item"><span class="legend-dot legend-dot--ok"></span>En cours</span>
-            <span class="legend-item"><span class="legend-dot legend-dot--warn"></span>Un côté à l'arrêt</span>
-            <span class="legend-item"><span class="legend-dot legend-dot--critical"></span>Arrêt / alerte majeure</span>
-            <span class="legend-item"><span class="legend-dot legend-dot--unknown"></span>Inconnu</span>
-          </div>
-          <!-- Légende du cadran 4 zones : chaque zone = 1 capteur (2 à gauche, 2 à droite). -->
-          <div class="legend-group">
-            <span class="legend-title">Cadran capteurs</span>
-            <span class="legend-item"><span class="legend-quad legend-quad--running"></span>En marche</span>
-            <span class="legend-item"><span class="legend-quad legend-quad--stopped"></span>À l'arrêt</span>
+            <span class="legend-title">Statut — cadran des 4 capteurs</span>
+            <span class="legend-item"><span class="legend-quad legend-quad--running"></span>Capteur en marche</span>
+            <span class="legend-item"><span class="legend-quad legend-quad--stopped"></span>Capteur à l'arrêt</span>
             <span class="legend-item"><span class="legend-quad legend-quad--nodata"></span>Pas de données</span>
           </div>
           <div class="legend-group">
             <span class="legend-title">Alerte</span>
-            <span class="legend-item"><span class="legend-dot legend-dot--ok"></span>Aucune</span>
+            <span class="legend-item"><span class="legend-dot legend-dot--unknown"></span>Aucune alerte</span>
             <span class="legend-item"><span class="legend-dot legend-dot--critical"></span>Alerte active</span>
           </div>
           <div class="legend-group">
-            <span class="legend-title">Capteurs</span>
-            <span class="legend-item"><span class="legend-dot legend-dot--ok"></span>OK</span>
-            <span class="legend-item"><span class="legend-dot legend-dot--warn"></span>Déséquilibre / capteur muet</span>
+            <span class="legend-title">Capteurs Gauche / Droite</span>
+            <span class="legend-item"><span class="legend-swatch"></span>Valeur en rouge : écart &gt; 10 A entre les capteurs d'un même côté</span>
+          </div>
+          <div class="legend-group">
+            <span class="legend-title">Écart G / D</span>
+            <span class="legend-item"><span class="legend-swatch"></span>Écart croisé &gt; 10 A (affiché uniquement quand tous les capteurs sont en marche)</span>
           </div>
         </div>
       </section>

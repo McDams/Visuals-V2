@@ -226,24 +226,32 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .ticker-item--clickable:hover { text-decoration: underline; }
 @keyframes ticker { to { transform: translateX(-100%); } }
 
-/* ---------- Légende ---------- */
+/* ---------- Légende ----------
+   Une carte par colonne du tableau, chacune regroupant ses propres codes couleur : plus lisible
+   qu'une longue ligne d'items mélangés. La grille s'adapte à la largeur disponible. */
 .legend {
-  display: flex; flex-wrap: wrap; gap: 12px 28px;
-  padding: 14px 22px; border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px;
+  padding: 16px 22px; border-top: 1px solid var(--border);
 }
-.legend-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.legend-group {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-tint);
+}
 .legend-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
-.legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .legend-dot--ok { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .legend-dot--warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
 .legend-dot--critical { background: var(--critical); box-shadow: 0 0 6px var(--critical); }
 .legend-dot--unknown { background: var(--muted); }
-/* Pastilles carrées de la légende du cadran capteurs (mêmes couleurs que les zones du tableau). */
-.legend-quad { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+/* Pastilles carrées : mêmes couleurs que les zones du cadran capteurs dans le tableau. */
+.legend-quad { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
 .legend-quad--running { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
 .legend-quad--stopped { background: var(--critical); }
-.legend-quad--nodata { background: var(--muted); opacity: 0.35; }
+.legend-quad--nodata { background: var(--muted); opacity: 0.5; }
+/* Échantillon rouge = valeur affichée en rouge dans la colonne (dépassement de seuil). */
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; background: var(--critical); }
 
 /* ---------- Barre de comparaison ---------- */
 .compare-bar {
@@ -271,18 +279,22 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
   width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; vertical-align: middle;
 }
 
-.table-scroll { overflow-x: auto; }
+/* Conteneur encadré : le tableau est ceinturé d'une bordure + coins arrondis (grillage). */
+.table-scroll { overflow-x: auto; border: 1px solid var(--border-strong); border-radius: 12px; }
 .tank-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1040px; }
 .tank-table thead th {
   position: sticky; top: 0; z-index: 1;
   text-align: left; padding: 12px 16px; font-size: 0.66rem; text-transform: uppercase;
   letter-spacing: 0.08em; color: var(--muted); background: var(--table-head-bg);
-  border-bottom: 1px solid var(--border); white-space: nowrap;
+  border-bottom: 1px solid var(--border-strong); white-space: nowrap;
 }
 .tank-table tbody td {
   padding: 14px 16px; border-bottom: 1px solid var(--border);
   vertical-align: middle; font-size: 0.9rem;
 }
+/* Grillage : bordure verticale entre chaque colonne (sauf la dernière). */
+.tank-table thead th:not(:last-child),
+.tank-table tbody td:not(:last-child) { border-right: 1px solid var(--border); }
 .tank-row { cursor: pointer; transition: background-color 0.15s; }
 .tank-row:hover { background: var(--row-hover); }
 .tank-row:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
