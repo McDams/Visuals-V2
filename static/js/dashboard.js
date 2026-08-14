@@ -1,3 +1,8 @@
+// =====================================================================================
+// Supervision Électroformage — Dashboard temps réel des cuves d'électroformage.
+// Plateforme conçue et développée par Donou Awadji Mahouna Serge.
+// =====================================================================================
+
 // Instances Chart.js vivantes, indexées par id de canvas (pour pouvoir les détruire avant
 // de redessiner). REFRESH_MS = intervalle de rafraîchissement du dashboard (5 s).
 const chartInstances = {};

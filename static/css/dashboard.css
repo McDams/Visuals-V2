@@ -226,6 +226,13 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .ticker-item--clickable:hover { text-decoration: underline; }
 @keyframes ticker { to { transform: translateX(-100%); } }
 
+/* Signature discrète du développeur, en pied de page. */
+.app-credit {
+  text-align: center; padding: 14px 22px 22px; font-size: 0.72rem;
+  color: var(--muted); letter-spacing: 0.02em; opacity: 0.75;
+}
+.app-credit span { font-weight: 600; color: var(--text); opacity: 0.9; }
+
 /* ---------- Légende ----------
    Une carte par colonne du tableau, chacune regroupant ses propres codes couleur : plus lisible
    qu'une longue ligne d'items mélangés. La grille s'adapte à la largeur disponible. */
