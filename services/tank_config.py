@@ -90,6 +90,12 @@ IMBALANCE_THRESHOLD_A = 5.0
 # trahit un contact desserré, une anode décrochée ou un dépôt inégal.
 SIDE_SPREAD_THRESHOLD_A = 10.0
 
+# Tolérance (secondes) pour les brefs creux sous le seuil dus au bruit des ampérages : tant que
+# l'écart ne repasse pas sous le seuil pendant PLUS de cette durée, l'alerte est considérée
+# continue (le décompte "actif depuis X" ne se réinitialise pas). Évite le clignotement du
+# message quand l'écart oscille légèrement autour de 10 A tout en restant globalement au-dessus.
+IMBALANCE_GRACE_SECONDS = 60
+
 # Seuil d'alerte "Courant élevé" (moyenne d'une cuve). Dimensionné pour le courant réel de
 # production (les jobs tournent entre 75 et 200 A) — ne pas le rabaisser vers quelques ampères,
 # ce n'était valable que pour les données de démo CSV synthétiques (~4 A).

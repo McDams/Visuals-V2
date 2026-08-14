@@ -15,6 +15,7 @@ from services.tank_config import (
     CURRENT_SETPOINT_CODE,
     VOLTAGE_SETPOINT_CODE,
     IMBALANCE_THRESHOLD_A,
+    IMBALANCE_GRACE_SECONDS,
     JOBS,
     OUTAGE_GAP_SECONDS,
     SIDE_SPREAD_THRESHOLD_A,
@@ -228,13 +229,15 @@ def _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_wi
 
         # Écart interne au porteur (entre ses 2 capteurs, max - min). Au-delà de 10 A, déséquilibre.
         spread = round(max(known_values) - min(known_values), 2) if len(known_values) >= 2 else None
-        imbalanced = spread is not None and spread > SIDE_SPREAD_THRESHOLD_A
-        # Depuis quand cet écart interne dépasse le seuil (pour l'alerte "> 1 min" + décompte).
-        spread_since = None
+        # Alerte d'écart interne AVEC tolérance au bruit (voir _diff_since) : `imbalance_since`
+        # (début du dépassement) reste stable malgré de brefs creux, ce qui évite que le message
+        # "> 1 min" ne clignote. `imbalance_active` = dépassement en cours (tolérance comprise).
+        imbalance_since = None
         side_ids = [s["id"] for s in node_sensors]
         if len(side_ids) == 2:
             _, since = _diff_since([side_ids[0]], [side_ids[1]], series_map, SIDE_SPREAD_THRESHOLD_A)
-            spread_since = since.isoformat() if since else None
+            imbalance_since = since.isoformat() if since else None
+        imbalance_active = imbalance_since is not None
 
         return {
             "sensors": latest,
@@ -242,9 +245,9 @@ def _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_wi
             "sum_current": sum_current,
             "balanced": balanced,
             "spread": spread,
-            "imbalanced": imbalanced,
+            "imbalance_active": imbalance_active,
             "all_running": all_running,
-            "spread_since": spread_since,
+            "imbalance_since": imbalance_since,
             "reporting_count": reporting_count,
             "sensor_count": len(latest),
         }
@@ -274,14 +277,17 @@ def _build_porteur_gap(left_sensors, right_sensors, nodes, series_map):
 
     value = round(abs(sum_right - sum_left), 2)
     active = bool(left_node.get("all_running") and right_node.get("all_running"))
-    over = active and value > SIDE_SPREAD_THRESHOLD_A
 
+    # Dépassement AVEC tolérance au bruit (voir _diff_since) : `since` reste stable malgré de
+    # brefs creux, donc l'état "en dépassement" et le décompte ne clignotent pas.
     _, since = _diff_since(
         [s["id"] for s in right_sensors],
         [s["id"] for s in left_sensors],
         series_map,
         SIDE_SPREAD_THRESHOLD_A,
     )
+    over = active and since is not None
+
     return {
         "value": value,
         "sum_p1": sum_right,  # Porteur 1 = droite
@@ -372,14 +378,17 @@ def _sum_series(sensor_ids, series_map):
     return result
 
 
-def _diff_since(group_a, group_b, series_map, threshold):
+def _diff_since(group_a, group_b, series_map, threshold, grace_seconds=IMBALANCE_GRACE_SECONDS):
     """Aligne (report de la dernière valeur connue) les séries des capteurs des deux groupes,
     calcule à chaque instant |somme(group_a) - somme(group_b)|, puis renvoie :
       - l'écart courant (dernier point),
-      - l'instant de DÉBUT de la plage continue actuelle où l'écart dépasse `threshold`
-        (None si le dernier point ne dépasse pas le seuil).
-    Sert à savoir depuis combien de temps un écart d'ampérage est en dépassement, afin de
-    déclencher une alerte au-delà d'une minute et d'en afficher le décompte."""
+      - l'instant de DÉBUT de la plage de dépassement en cours (None si l'écart n'est plus en
+        dépassement).
+
+    Pour éviter que le bruit ne réinitialise le décompte, on TOLÈRE les brefs passages sous le
+    seuil : la plage de dépassement n'est considérée terminée que si l'écart reste sous le seuil
+    pendant plus de `grace_seconds`. De même, un bref creux en toute fin de série ne désactive
+    pas l'alerte (on regarde s'il y a eu un dépassement dans les `grace_seconds` derniers)."""
     ids = [sid for sid in (group_a + group_b) if series_map.get(sid)]
     if len(ids) < len(group_a) + len(group_b):
         return None, None  # un capteur sans série : alignement impossible
@@ -409,16 +418,26 @@ def _diff_since(group_a, group_b, series_map, threshold):
         return None, None
 
     current = round(diffs[-1][1], 2)
-    if diffs[-1][1] <= threshold:
+    last_time = diffs[-1][0]
+
+    # Actif seulement si un dépassement a eu lieu dans les `grace_seconds` dernières secondes
+    # (un bref creux final dû au bruit ne désactive donc pas l'alerte).
+    recent_over = any(
+        value > threshold and (last_time - t).total_seconds() <= grace_seconds
+        for t, value in diffs
+    )
+    if not recent_over:
         return current, None
 
-    # On remonte tant que l'écart reste au-dessus du seuil : début de la plage de dépassement.
-    since = diffs[-1][0]
-    for t, value in reversed(diffs):
+    # Début de la plage de dépassement en cours : on avance dans le temps, et on ne repart à zéro
+    # que si deux dépassements sont espacés de plus de `grace_seconds` (creux trop long = résolu).
+    since = None
+    last_over_time = None
+    for t, value in diffs:
         if value > threshold:
-            since = t
-        else:
-            break
+            if since is None or (last_over_time is not None and (t - last_over_time).total_seconds() > grace_seconds):
+                since = t
+            last_over_time = t
     return current, since
 
 

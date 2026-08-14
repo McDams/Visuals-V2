@@ -438,7 +438,9 @@ function renderTankTable() {
   // porteur tourne), et message d'alerte avec décompte si ce dépassement dure plus d'1 min.
   const porteurCell = (node, label) => {
     if (!node) return '<span class="muted">Non assigné</span>';
-    const alerting = node.imbalanced === true && node.all_running === true;
+    // Alerte "stable" : dépassement en cours (avec tolérance au bruit, imbalance_active) et
+    // porteur réellement en marche. Évite le clignotement dû aux oscillations autour de 10 A.
+    const alerting = node.imbalance_active === true && node.all_running === true;
     const rows = (node.sensors || [])
       .map((s) => {
         const val = s.current != null ? `${s.current} A` : '--';
@@ -454,7 +456,7 @@ function renderTankTable() {
     const signal = alerting
       ? `<div class="sensor-signal" title="Écart entre les 2 capteurs supérieur à 10 A">⚠ Écart ${node.spread} A</div>`
       : '';
-    const durationAlert = alerting ? porteurAlertHtml(node.spread_since, label) : '';
+    const durationAlert = alerting ? porteurAlertHtml(node.imbalance_since, label) : '';
     return `<div class="sensor-cell">${rows || '<span class="muted">--</span>'}${sum}${signal}${durationAlert}</div>`;
   };
 
@@ -472,10 +474,11 @@ function renderTankTable() {
     return lines.length ? `<div class="consigne-cell">${lines.join('')}</div>` : '<span class="muted">--</span>';
   };
 
-  // Cellule "Écart Porteur 1 - Porteur 2" = |somme P1 - somme P2|. Rouge quand l'écart dépasse
-  // 10 A (les deux porteurs en marche), avec message + décompte au-delà d'1 min.
+  // Cellule "Écart Porteur 1 - Porteur 2" = |somme P1 - somme P2|. N'est affichée QUE si les deux
+  // porteurs sont en marche (gap.active) : un porteur à l'arrêt créerait un écart énorme mais non
+  // pertinent. Rouge quand l'écart dépasse 10 A, avec message + décompte au-delà d'1 min.
   const porteurGapCell = (gap) => {
-    if (!gap || gap.value == null) return '<span class="muted">--</span>';
+    if (!gap || gap.value == null || !gap.active) return '<span class="muted">--</span>';
     const over = gap.over === true;
     const valLine = `<div class="gap-line ${over ? 'gap-line--over' : ''}"><span class="gap-line-pair">|P1 − P2|</span><span class="gap-line-val">${gap.value} A</span></div>`;
     const durationAlert = over ? porteurAlertHtml(gap.since, 'Porteur 1 - Porteur 2') : '';
