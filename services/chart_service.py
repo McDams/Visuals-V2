@@ -620,9 +620,12 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
         total_current_series = _sum_series([s["id"] for s in selected_sensors], series_map)
         job = _detect_job(total_current_series)
 
+        # Chaque série porte son porteur (1 = droite, 2 = gauche) : le graphe s'en sert pour le
+        # style (même couleur, symboles pour Porteur 1, traits pleins/pointillés pour Porteur 2).
         series = [
             {
                 "label": display_name(tank, sensor),
+                "porteur": 1 if get_node(tank, sensor) == "right" else 2 if get_node(tank, sensor) == "left" else None,
                 "points": [
                     {
                         "time": item["time"].strftime("%H:%M:%S"),
@@ -762,7 +765,11 @@ def get_tank_history(tank, hours):
         return [{"time": item["time"].isoformat(), "value": item["value"]} for item in series_map.get(sensor_id, [])]
 
     series = [
-        {"label": sensor.get("name") or sensor.get("id") or "Capteur inconnu", "points": _points(sensor["id"])}
+        {
+            "label": display_name(tank, sensor),
+            "porteur": 1 if get_node(tank, sensor) == "right" else 2 if get_node(tank, sensor) == "left" else None,
+            "points": _points(sensor["id"]),
+        }
         for sensor in selected_sensors
     ]
     if automation:

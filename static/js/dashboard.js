@@ -9,12 +9,40 @@ const REFRESH_MS = 5000;
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
-// Palette des 4 lignes de capteurs et couleur de la ligne automate.
-function chartSensorPalette() {
-  return [cssVar('--chart-1'), cssVar('--chart-2'), cssVar('--chart-3'), cssVar('--chart-4')];
-}
+// Couleur de la ligne automate (les capteurs partagent tous --chart-1, voir sensorChartStyle).
 function chartAutomateColor() {
   return cssVar('--job-text');
+}
+
+// Style d'une courbe de capteur : TOUS les capteurs ont la MÊME couleur (demande Tarik). On les
+// distingue par la forme et le trait :
+//   - Porteur 1 (droite) : symboles distincts (cercle vs triangle), espacés le long de la courbe.
+//   - Porteur 2 (gauche) : aucun symbole ; les 2 capteurs se distinguent par trait plein / pointillé.
+// `counters` compte les capteurs déjà rencontrés par porteur (pour l'index 0/1 au sein du porteur).
+function sensorChartStyle(series, counters) {
+  const style = {
+    borderColor: cssVar('--chart-1'),
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    tension: 0.3,
+    yAxisID: 'y',
+  };
+  const porteur = series.porteur;
+  const idx = porteur ? counters[porteur]++ : 0;
+  if (porteur === 1) {
+    style.pointStyle = idx === 0 ? 'circle' : 'triangle';
+    // Symboles espacés (~12 le long de la courbe) pour rester lisibles même avec beaucoup de points.
+    style.pointRadius = (ctx) => {
+      const n = ctx.chart.data.labels.length || 1;
+      const step = Math.max(1, Math.round(n / 12));
+      return ctx.dataIndex % step === 0 ? 3.5 : 0;
+    };
+    style.pointHoverRadius = 4;
+  } else {
+    style.pointRadius = 0;
+    style.borderDash = idx === 1 ? [6, 4] : undefined;
+  }
+  return style;
 }
 
 // Axe de courant (A) fixe et partagé par tous les graphes. À garder synchronisé avec
@@ -796,26 +824,26 @@ function initTankModalChart(view, canvasId) {
     return ah - bh || am - bm || as - bs;
   });
 
-  let sensorIndex = 0;
+  const counters = { 1: 0, 2: 0 };
   const hasAutomate = (view.series || []).some((s) => s.isAutomate);
-  const sensorPalette = chartSensorPalette();
   const automateColor = chartAutomateColor();
   const datasets = (view.series || []).map((series) => {
     const byTime = Object.fromEntries(series.points.map((p) => [p.time, p.value]));
-    const isAutomate = Boolean(series.isAutomate);
-    const color = isAutomate ? automateColor : sensorPalette[sensorIndex % sensorPalette.length];
-    if (!isAutomate) sensorIndex += 1;
-    return {
-      label: series.label,
-      data: labels.map((t) => byTime[t] ?? null),
-      borderColor: color,
-      backgroundColor: 'transparent',
-      tension: 0.3,
-      pointRadius: 0,
-      borderWidth: isAutomate ? 3 : 2,
-      borderDash: isAutomate ? [6, 4] : undefined,
-      yAxisID: isAutomate ? 'y1' : 'y',
-    };
+    const data = labels.map((t) => byTime[t] ?? null);
+    if (series.isAutomate) {
+      return {
+        label: series.label,
+        data,
+        borderColor: automateColor,
+        backgroundColor: 'transparent',
+        tension: 0.3,
+        pointRadius: 0,
+        borderWidth: 3,
+        borderDash: [6, 4],
+        yAxisID: 'y1',
+      };
+    }
+    return { label: series.label, data, ...sensorChartStyle(series, counters) };
   });
 
   // Ligne de consigne (courant attendu par capteur actif) : couleur pleine contraste + gros
@@ -881,27 +909,27 @@ function initHistoryChart(history, canvasId) {
       : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   });
 
-  let sensorIndex = 0;
+  const counters = { 1: 0, 2: 0 };
   const hasAutomate = (history.series || []).some((s) => s.isAutomate);
-  const sensorPalette = chartSensorPalette();
   const automateColor = chartAutomateColor();
   const datasets = (history.series || []).map((series) => {
     const byTime = Object.fromEntries(series.points.map((p) => [p.time, p.value]));
-    const isAutomate = Boolean(series.isAutomate);
-    const color = isAutomate ? automateColor : sensorPalette[sensorIndex % sensorPalette.length];
-    if (!isAutomate) sensorIndex += 1;
-    return {
-      label: series.label,
-      data: labels.map((t) => byTime[t] ?? null),
-      borderColor: color,
-      backgroundColor: 'transparent',
-      tension: 0.25,
-      pointRadius: 0,
-      borderWidth: isAutomate ? 3 : 2,
-      borderDash: isAutomate ? [6, 4] : undefined,
-      yAxisID: isAutomate ? 'y1' : 'y',
-      spanGaps: true,
-    };
+    const data = labels.map((t) => byTime[t] ?? null);
+    if (series.isAutomate) {
+      return {
+        label: series.label,
+        data,
+        borderColor: automateColor,
+        backgroundColor: 'transparent',
+        tension: 0.25,
+        pointRadius: 0,
+        borderWidth: 3,
+        borderDash: [6, 4],
+        yAxisID: 'y1',
+        spanGaps: true,
+      };
+    }
+    return { label: series.label, data, tension: 0.25, spanGaps: true, ...sensorChartStyle(series, counters) };
   });
 
   const scales = {
