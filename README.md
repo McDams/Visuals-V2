@@ -219,7 +219,7 @@ Tous les seuils opérationnels sont centralisés dans `services/tank_config.py` 
 
 - `NODE_MAP` — association capteur → nœud (`left`/`right`) par cuve, utilisée pour le tableau de répartition et le statut Noeud-G/Noeud-D. KS1, KS3, KS4 sont mappés à partir de leur nom de capteur. **KS2 est un placeholder** (ses capteurs manuels n'ont pas de nom en base, seulement un `eui64` — la répartition gauche/droite a été déduite du `display_order`, à corriger dans `NODE_MAP["KS2"]` dès que la disposition physique réelle est connue).
 - `STOP_CURRENT_THRESHOLD_A` (10 A) et `STOP_DURATION_SECONDS` (60 s) — définissent quand un nœud/une cuve est considéré à l'arrêt.
-- `IMBALANCE_THRESHOLD_A` (5 A) — écart capteur-vs-moyenne toléré pour l'alerte "Écart Ampérage" (bandeau d'alertes).
+- `IMBALANCE_THRESHOLD_A` (10 A) — écart capteur-vs-moyenne toléré pour l'alerte "Écart Ampérage" (bandeau d'alertes). Aligné à 10 A, l'écart autorisé métier (en dessous, ce n'est pas une alerte).
 - `SIDE_SPREAD_THRESHOLD_A` (10 A) — écart maximal toléré **entre les 2 capteurs d'un porteur** et **entre les sommes des 2 porteurs** ; au-delà, le tableau signale un déséquilibre (valeurs en rouge) et, si le dépassement dure plus d'1 min, affiche un message avec le décompte du temps écoulé.
 - `SENSOR_DISPLAY_NAMES` — alias d'affichage forcés par cuve (clé = `name` ou `eui64`). Utilisé provisoirement pour KS2, dont les capteurs sans nom sont renommés Porteur 1 (droite) = **A/B** et Porteur 2 (gauche) = **C/D**.
 - `VOLTAGE_SETPOINT_CODE` (`voltage_setpoint`) — code de la consigne de tension de l'automate affichée dans la colonne Consigne. **Correction d'unité** : la valeur remontée est 10× trop grande (200 = 20,0 V réels), elle est donc divisée par 10 à l'affichage.

@@ -81,8 +81,9 @@ STOP_DURATION_SECONDS = 60
 SENSOR_STALE_SECONDS = 60
 
 # Seuil d'alerte pour l'écart de courant, vérifié à la fois capteur-vs-moyenne-cuve et
-# capteur-vs-moyenne-du-côté.
-IMBALANCE_THRESHOLD_A = 5.0
+# capteur-vs-moyenne-du-côté. Aligné à 10 A (l'écart autorisé métier) : en dessous, ce n'est
+# pas considéré comme une alerte.
+IMBALANCE_THRESHOLD_A = 10.0
 
 # Seuil d'écart MAX entre les capteurs d'un même côté (max - min). Au-delà, le côté est signalé
 # comme déséquilibré dans le tableau (pastille + valeurs en rouge). C'est l'indicateur "métier"

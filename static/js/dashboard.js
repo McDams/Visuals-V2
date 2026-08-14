@@ -180,30 +180,38 @@ function formatTime(iso) {
   return d.toLocaleTimeString('fr-FR');
 }
 
-// Conteneur d'alerte d'écart d'ampérage avec décompte. `since` = instant (ISO) depuis lequel
-// l'écart dépasse 10 A. Le message ne s'affiche qu'au-delà d'1 minute (géré par
-// refreshPorteurAlerts), avec le temps écoulé depuis l'activation, rafraîchi chaque seconde.
-function porteurAlertHtml(since, label) {
-  if (!since) return '';
-  return `<div class="porteur-alert" data-since="${since}" data-label="${label}" hidden></div>`;
+// Libellé d'alerte d'écart selon le temps écoulé depuis `sinceMs` (epoch ms). Renvoie null tant
+// que l'écart dure moins d'1 minute (pas encore de message affiché).
+function porteurAlertLabel(sinceMs, label) {
+  if (!Number.isFinite(sinceMs)) return null;
+  const seconds = Math.floor((Date.now() - sinceMs) / 1000);
+  if (seconds <= 60) return null;
+  return `⚠ ${label} : écart > 10 A depuis ${formatDuration(seconds)}`;
 }
 
-// Met à jour, chaque seconde, tous les décomptes d'alertes d'écart : affiche le message
-// uniquement si l'écart dure depuis plus d'1 minute, en y intégrant le temps écoulé.
+// Conteneur d'alerte d'écart d'ampérage avec décompte. `since` = instant (ISO) de début de
+// l'épisode d'alerte. IMPORTANT : on rend l'élément DIRECTEMENT dans son état final (visible +
+// texte s'il dure déjà > 1 min, sinon masqué), et non systématiquement masqué. Sans cela, chaque
+// re-rendu du tableau (toutes les 5 s) le recréait masqué puis le tick l'affichait ~1 s plus
+// tard, d'où le clignotement. Le décompte est ensuite mis à jour en place chaque seconde.
+function porteurAlertHtml(since, label) {
+  if (!since) return '';
+  const text = porteurAlertLabel(new Date(since).getTime(), label);
+  return `<div class="porteur-alert" data-since="${since}" data-label="${label}"${text ? '' : ' hidden'}>${text || ''}</div>`;
+}
+
+// Met à jour en place, chaque seconde, tous les décomptes d'alertes d'écart (sans re-rendre le
+// tableau) : le message reste affiché de façon stable tant que l'alerte dure, et le temps écoulé
+// s'incrémente. Masqué tant que l'écart dure moins d'1 minute.
 function refreshPorteurAlerts() {
-  const now = Date.now();
   document.querySelectorAll('.porteur-alert[data-since]').forEach((el) => {
-    const since = new Date(el.dataset.since).getTime();
-    if (!Number.isFinite(since)) {
+    const text = porteurAlertLabel(new Date(el.dataset.since).getTime(), el.dataset.label);
+    if (text) {
+      if (el.hidden) el.hidden = false;
+      if (el.textContent !== text) el.textContent = text;
+    } else if (!el.hidden) {
       el.hidden = true;
-      return;
-    }
-    const seconds = Math.floor((now - since) / 1000);
-    if (seconds > 60) {
-      el.hidden = false;
-      el.textContent = `⚠ ${el.dataset.label} : écart > 10 A depuis ${formatDuration(seconds)}`;
-    } else {
-      el.hidden = true;
+      el.textContent = '';
     }
   });
 }
