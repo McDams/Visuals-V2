@@ -147,11 +147,40 @@ function formatTime(iso) {
   return d.toLocaleTimeString('fr-FR');
 }
 
-// Met à jour l'horloge du bandeau (date + heure) chaque seconde.
+// Conteneur d'alerte d'écart d'ampérage avec décompte. `since` = instant (ISO) depuis lequel
+// l'écart dépasse 10 A. Le message ne s'affiche qu'au-delà d'1 minute (géré par
+// refreshPorteurAlerts), avec le temps écoulé depuis l'activation, rafraîchi chaque seconde.
+function porteurAlertHtml(since, label) {
+  if (!since) return '';
+  return `<div class="porteur-alert" data-since="${since}" data-label="${label}" hidden></div>`;
+}
+
+// Met à jour, chaque seconde, tous les décomptes d'alertes d'écart : affiche le message
+// uniquement si l'écart dure depuis plus d'1 minute, en y intégrant le temps écoulé.
+function refreshPorteurAlerts() {
+  const now = Date.now();
+  document.querySelectorAll('.porteur-alert[data-since]').forEach((el) => {
+    const since = new Date(el.dataset.since).getTime();
+    if (!Number.isFinite(since)) {
+      el.hidden = true;
+      return;
+    }
+    const seconds = Math.floor((now - since) / 1000);
+    if (seconds > 60) {
+      el.hidden = false;
+      el.textContent = `⚠ ${el.dataset.label} : écart > 10 A depuis ${formatDuration(seconds)}`;
+    } else {
+      el.hidden = true;
+    }
+  });
+}
+
+// Met à jour l'horloge du bandeau (date + heure) chaque seconde, et les décomptes d'alertes.
 function tickClock() {
   const now = new Date();
   setText('clock-date', now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
   setText('clock-time', now.toLocaleTimeString('fr-FR'));
+  refreshPorteurAlerts();
 }
 setInterval(tickClock, 1000);
 tickClock();
@@ -376,42 +405,39 @@ function renderTankTable() {
     return;
   }
 
-  // Rendu d'une cellule de côté : courant de CHAQUE capteur (au lieu de la moyenne), plus un
-  // signal de déséquilibre quand l'écart max entre capteurs du côté dépasse 10 A (node.imbalanced).
-  const nodeCell = (node) => {
+  // Rendu d'une cellule de porteur : courant de CHAQUE capteur, puis la SOMME des ampérages du
+  // porteur. Signal de déséquilibre quand l'écart entre ses 2 capteurs dépasse 10 A (et que le
+  // porteur tourne), et message d'alerte avec décompte si ce dépassement dure plus d'1 min.
+  const porteurCell = (node, label) => {
     if (!node) return '<span class="muted">Non assigné</span>';
-    const imbalanced = node.imbalanced === true;
-    // Une ligne par capteur : nom + courant. En rouge si le côté est déséquilibré, gris si le
-    // capteur ne remonte pas de données.
+    const alerting = node.imbalanced === true && node.all_running === true;
     const rows = (node.sensors || [])
       .map((s) => {
         const val = s.current != null ? `${s.current} A` : '--';
-        const cls = !s.reporting ? 'sensor-line--nodata' : imbalanced ? 'sensor-line--imbalanced' : '';
+        const cls = !s.reporting ? 'sensor-line--nodata' : alerting ? 'sensor-line--imbalanced' : '';
         return `<div class="sensor-line ${cls}"><span class="sensor-line-name">${s.name}</span><span class="sensor-line-val">${val}</span></div>`;
       })
       .join('');
-    // Bandeau de signal quand l'écart dépasse le seuil (⚠ + valeur de l'écart).
-    const signal = imbalanced
-      ? `<div class="sensor-signal" title="Écart entre capteurs supérieur à 10 A">⚠ Écart ${node.spread} A</div>`
+    // Somme des ampérages du porteur.
+    const sum =
+      node.sum_current != null
+        ? `<div class="sensor-sum"><span class="sensor-sum-label">Somme</span><span class="sensor-sum-val">${node.sum_current} A</span></div>`
+        : '';
+    const signal = alerting
+      ? `<div class="sensor-signal" title="Écart entre les 2 capteurs supérieur à 10 A">⚠ Écart ${node.spread} A</div>`
       : '';
-    return `<div class="sensor-cell">${rows || '<span class="muted">--</span>'}${signal}</div>`;
+    const durationAlert = alerting ? porteurAlertHtml(node.spread_since, label) : '';
+    return `<div class="sensor-cell">${rows || '<span class="muted">--</span>'}${sum}${signal}${durationAlert}</div>`;
   };
 
-  // Cellule "Écart G/D" : écarts croisés gauche×droite (voir _build_cross_gaps). On n'affiche un
-  // écart QUE si (1) tous les capteurs de la cuve sont en marche (data.active) et (2) l'écart
-  // dépasse 10 A (p.over). Sinon rien : ces écarts n'ont de sens que cuve entièrement active, et
-  // seuls les dépassements sont pertinents à signaler.
-  const gapCell = (data) => {
-    if (!data || !data.active) return '<span class="muted">--</span>';
-    const over = (data.pairs || []).filter((p) => p.over);
-    if (!over.length) return '<span class="muted">--</span>';
-    const rows = over
-      .map(
-        (p) =>
-          `<div class="gap-line gap-line--over"><span class="gap-line-pair">${p.left} ↔ ${p.right}</span><span class="gap-line-val">${p.gap} A</span></div>`
-      )
-      .join('');
-    return `<div class="gap-cell">${rows}</div>`;
+  // Cellule "Écart Porteur 1 - Porteur 2" = |somme P1 - somme P2|. Rouge quand l'écart dépasse
+  // 10 A (les deux porteurs en marche), avec message + décompte au-delà d'1 min.
+  const porteurGapCell = (gap) => {
+    if (!gap || gap.value == null) return '<span class="muted">--</span>';
+    const over = gap.over === true;
+    const valLine = `<div class="gap-line ${over ? 'gap-line--over' : ''}"><span class="gap-line-pair">|P1 − P2|</span><span class="gap-line-val">${gap.value} A</span></div>`;
+    const durationAlert = over ? porteurAlertHtml(gap.since, 'Porteur 1 - Porteur 2') : '';
+    return `<div class="gap-cell">${valLine}${durationAlert}</div>`;
   };
 
   tbody.innerHTML = state.tankViews
@@ -420,6 +446,11 @@ function renderTankTable() {
       const tankAlerts = alertsForTank(view.tank);
       const hasMajor = tankAlerts.some((a) => a.severity === 'major');
       const hasProblem = tankAlerts.length > 0;
+
+      // Surbrillance de ligne : bleue quand la cuve est simplement à l'arrêt (état normal, pas une
+      // alerte), rouge seulement pour une vraie alerte majeure hors arrêt.
+      const isStopped = view.status === 'arret';
+      const rowClass = isStopped ? 'tank-row--stopped' : hasMajor ? 'tank-row--alert' : '';
 
       // Colonne Job masquée temporairement : pas encore de valeurs fiables à afficher. Le job
       // reste calculé côté backend (alertes de dépassement de durée) ; on n'affiche que "--" ici.
@@ -437,7 +468,7 @@ function renderTankTable() {
           : '--';
 
       return `
-      <tr class="tank-row${hasMajor ? ' tank-row--alert' : ''}" data-tank="${view.tank}" tabindex="0">
+      <tr class="tank-row${rowClass ? ' ' + rowClass : ''}" data-tank="${view.tank}" tabindex="0">
         <td class="select-cell"><input type="checkbox" class="tank-select" data-tank="${view.tank}" aria-label="Sélectionner ${view.tank}"${state.compareTanks.has(view.tank) ? ' checked' : ''} /></td>
         <td>
           <div class="tank-row-name">
@@ -459,10 +490,10 @@ function renderTankTable() {
             ${hasProblem ? `<span class="alert-dot-count alert-dot-count--problem">${tankAlerts.length}</span>` : ''}
           </div>
         </td>
-        <td class="tabular">${view.setpoint?.voltage != null ? view.setpoint.voltage + ' V' : '<span class="muted">--</span>'}</td>
-        <td class="tabular">${nodeCell(view.nodes?.left)}</td>
-        <td class="tabular">${gapCell(view.cross_gaps)}</td>
-        <td class="tabular">${nodeCell(view.nodes?.right)}</td>
+        <td class="tabular">${view.setpoint?.voltage != null ? view.setpoint.voltage.toFixed(1).replace('.', ',') + ' V' : '<span class="muted">--</span>'}</td>
+        <td class="tabular">${porteurCell(view.nodes?.left, 'Porteur 2')}</td>
+        <td class="tabular">${porteurGapCell(view.porteur_gap)}</td>
+        <td class="tabular">${porteurCell(view.nodes?.right, 'Porteur 1')}</td>
         <td>${jobCell}</td>
         <td class="tabular">${timeRemaining}</td>
         <td class="row-action">›</td>

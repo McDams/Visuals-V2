@@ -212,6 +212,9 @@ def _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_wi
 
         known_values = [item["current"] for item in latest if item["current"] is not None]
         avg = round(sum(known_values) / len(known_values), 2) if known_values else None
+        # Somme des ampérages du porteur (côté) : c'est cette somme par porteur qui sert à
+        # calculer l'écart Porteur 1 - Porteur 2.
+        sum_current = round(sum(known_values), 2) if known_values else None
 
         for item in latest:
             item["current"] = round(item["current"], 2) if item["current"] is not None else None
@@ -219,18 +222,29 @@ def _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_wi
 
         balanced = all(item["delta"] is not None and abs(item["delta"]) <= IMBALANCE_THRESHOLD_A for item in latest) if known_values else None
         reporting_count = sum(1 for item in latest if item["reporting"])
+        # Porteur "en marche" = ses deux capteurs en marche (sert à ne déclencher les alertes
+        # d'écart que quand le porteur tourne réellement).
+        all_running = len(latest) > 0 and all(item["running"] for item in latest)
 
-        # Écart max entre capteurs du côté (max - min) : indicateur "métier" affiché dans le
-        # tableau. Au-delà de SIDE_SPREAD_THRESHOLD_A (10 A), le côté est signalé déséquilibré.
+        # Écart interne au porteur (entre ses 2 capteurs, max - min). Au-delà de 10 A, déséquilibre.
         spread = round(max(known_values) - min(known_values), 2) if len(known_values) >= 2 else None
         imbalanced = spread is not None and spread > SIDE_SPREAD_THRESHOLD_A
+        # Depuis quand cet écart interne dépasse le seuil (pour l'alerte "> 1 min" + décompte).
+        spread_since = None
+        side_ids = [s["id"] for s in node_sensors]
+        if len(side_ids) == 2:
+            _, since = _diff_since([side_ids[0]], [side_ids[1]], series_map, SIDE_SPREAD_THRESHOLD_A)
+            spread_since = since.isoformat() if since else None
 
         return {
             "sensors": latest,
             "avg_current": avg,
+            "sum_current": sum_current,
             "balanced": balanced,
             "spread": spread,
             "imbalanced": imbalanced,
+            "all_running": all_running,
+            "spread_since": spread_since,
             "reporting_count": reporting_count,
             "sensor_count": len(latest),
         }
@@ -238,35 +252,44 @@ def _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_wi
     return {"left": _table(left_sensors), "right": _table(right_sensors)}
 
 
-def _build_cross_gaps(nodes):
-    """Écarts CROISÉS entre les capteurs du côté gauche et ceux du côté droit : pour chaque
-    capteur de gauche × chaque capteur de droite, l'écart de courant en valeur absolue. Sert à
-    la colonne "Écart G/D". Ex. KS1 (gauche 13/14, droite 11/12) → 13-11, 13-12, 14-11, 14-12.
+def _build_porteur_gap(left_sensors, right_sensors, nodes, series_map):
+    """Écart entre les deux porteurs d'une cuve = |somme(ampérages Porteur 1) - somme(Porteur 2)|,
+    en valeur absolue (Porteur 1 = côté droit, Porteur 2 = côté gauche).
 
-    Ces écarts traduisent les liaisons entre les deux côtés et n'ont de sens que si TOUS les
-    capteurs sont en marche : on renvoie donc un drapeau "active" (tous en marche) que l'UI
-    utilise pour n'afficher les écarts que dans ce cas, et uniquement ceux supérieurs à
-    SIDE_SPREAD_THRESHOLD_A (10 A, flag "over")."""
-    left = (nodes.get("left") or {}).get("sensors") or []
-    right = (nodes.get("right") or {}).get("sensors") or []
-    all_sensors = left + right
-    active = len(all_sensors) > 0 and all(s.get("running") for s in all_sensors)
-    pairs = []
-    for left_sensor in left:
-        for right_sensor in right:
-            if left_sensor["current"] is None or right_sensor["current"] is None:
-                gap = None
-            else:
-                gap = round(abs(left_sensor["current"] - right_sensor["current"]), 2)
-            pairs.append(
-                {
-                    "left": left_sensor["name"],
-                    "right": right_sensor["name"],
-                    "gap": gap,
-                    "over": gap is not None and gap > SIDE_SPREAD_THRESHOLD_A,
-                }
-            )
-    return {"active": active, "pairs": pairs}
+    Ne dépasse normalement pas SIDE_SPREAD_THRESHOLD_A (10 A). Renvoie :
+      - value : l'écart courant,
+      - sum_p1 / sum_p2 : les sommes par porteur (aussi affichées dans leurs colonnes),
+      - active : les deux porteurs sont en marche (sinon un porteur à l'arrêt créerait un écart
+        énorme mais non pertinent),
+      - over : active ET écart > seuil,
+      - since : depuis quand l'écart dépasse le seuil (pour l'alerte "> 1 min" + décompte)."""
+    left_node = nodes.get("left") or {}
+    right_node = nodes.get("right") or {}
+    sum_left = left_node.get("sum_current")
+    sum_right = right_node.get("sum_current")
+
+    if sum_left is None or sum_right is None:
+        return {"value": None, "sum_p1": sum_right, "sum_p2": sum_left,
+                "active": False, "over": False, "since": None}
+
+    value = round(abs(sum_right - sum_left), 2)
+    active = bool(left_node.get("all_running") and right_node.get("all_running"))
+    over = active and value > SIDE_SPREAD_THRESHOLD_A
+
+    _, since = _diff_since(
+        [s["id"] for s in right_sensors],
+        [s["id"] for s in left_sensors],
+        series_map,
+        SIDE_SPREAD_THRESHOLD_A,
+    )
+    return {
+        "value": value,
+        "sum_p1": sum_right,  # Porteur 1 = droite
+        "sum_p2": sum_left,   # Porteur 2 = gauche
+        "active": active,
+        "over": over,
+        "since": since.isoformat() if (over and since) else None,
+    }
 
 
 def _matching_job(value):
@@ -347,6 +370,56 @@ def _sum_series(sensor_ids, series_map):
         if len(known) == len(sensor_ids):
             result.append({"time": t, "value": round(sum(known), 2)})
     return result
+
+
+def _diff_since(group_a, group_b, series_map, threshold):
+    """Aligne (report de la dernière valeur connue) les séries des capteurs des deux groupes,
+    calcule à chaque instant |somme(group_a) - somme(group_b)|, puis renvoie :
+      - l'écart courant (dernier point),
+      - l'instant de DÉBUT de la plage continue actuelle où l'écart dépasse `threshold`
+        (None si le dernier point ne dépasse pas le seuil).
+    Sert à savoir depuis combien de temps un écart d'ampérage est en dépassement, afin de
+    déclencher une alerte au-delà d'une minute et d'en afficher le décompte."""
+    ids = [sid for sid in (group_a + group_b) if series_map.get(sid)]
+    if len(ids) < len(group_a) + len(group_b):
+        return None, None  # un capteur sans série : alignement impossible
+
+    all_times = sorted({point["time"] for sid in ids for point in series_map[sid]})
+    if not all_times:
+        return None, None
+
+    pointers = {sid: 0 for sid in ids}
+    last_value = {sid: None for sid in ids}
+    diffs = []  # liste de (time, écart absolu)
+    for t in all_times:
+        for sid in ids:
+            points = series_map[sid]
+            idx = pointers[sid]
+            while idx < len(points) and points[idx]["time"] <= t:
+                last_value[sid] = points[idx]["value"]
+                idx += 1
+            pointers[sid] = idx
+        if any(last_value[sid] is None for sid in ids):
+            continue
+        sum_a = sum(last_value[sid] for sid in group_a)
+        sum_b = sum(last_value[sid] for sid in group_b)
+        diffs.append((t, abs(sum_a - sum_b)))
+
+    if not diffs:
+        return None, None
+
+    current = round(diffs[-1][1], 2)
+    if diffs[-1][1] <= threshold:
+        return current, None
+
+    # On remonte tant que l'écart reste au-dessus du seuil : début de la plage de dépassement.
+    since = diffs[-1][0]
+    for t, value in reversed(diffs):
+        if value > threshold:
+            since = t
+        else:
+            break
+    return current, since
 
 
 def _select_tank_sensors(tank_sensors):
@@ -532,7 +605,7 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
             series_map,
         )
         nodes = _build_node_tables(tank, left_sensors, right_sensors, series_map, sensors_with_real_data)
-        cross_gaps = _build_cross_gaps(nodes)
+        porteur_gap = _build_porteur_gap(left_sensors, right_sensors, nodes, series_map)
         sensors_reporting = sum(1 for s in selected_sensors if s["id"] in sensors_with_real_data)
         # "Actif" (courant >= STOP_CURRENT_THRESHOLD_A) est plus strict que "remonte des données"
         # (a une ligne réelle) : un capteur peut envoyer des données alors que son côté est à
@@ -585,7 +658,7 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                 "series": series,
                 "status": status,
                 "nodes": nodes,
-                "cross_gaps": cross_gaps,
+                "porteur_gap": porteur_gap,
                 "job": job,
                 "sensors_reporting": sensors_reporting,
                 "sensors_total": len(selected_sensors),
@@ -599,7 +672,9 @@ def _build_tank_sensor_view(rows, sensors, measurement_types):
                     if setpoint_total is not None and sensors_active > 0
                     else None,
                     # Consigne de tension de l'automate (V), affichée dans la colonne Consigne.
-                    "voltage": round(voltage_setpoint, 2) if voltage_setpoint is not None else None,
+                    # Correction d'unité (Tarik) : la valeur remontée est 10× trop grande
+                    # (200 affiché = 20,0 V réels), on divise donc encore par 10.
+                    "voltage": round(voltage_setpoint / 10, 1) if voltage_setpoint is not None else None,
                 },
             }
         )

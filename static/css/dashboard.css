@@ -301,6 +301,9 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .tank-row:last-child td { border-bottom: none; }
 .tank-row--alert { background: rgba(244, 63, 94, 0.045); }
 .tank-row--alert:hover { background: rgba(244, 63, 94, 0.09); }
+/* Cuve simplement à l'arrêt : surbrillance bleue (état normal), pas rouge (pas d'alerte). */
+.tank-row--stopped { background: rgba(59, 130, 246, 0.08); }
+.tank-row--stopped:hover { background: rgba(59, 130, 246, 0.14); }
 
 .tank-row-name { display: flex; align-items: center; gap: 10px; }
 .tank-row-name strong { display: block; font-size: 1.04rem; font-family: "Space Grotesk", sans-serif; }
@@ -318,17 +321,29 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .node-cell-dot--ok { background: var(--ok); }
 .node-cell-dot--warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
 
-/* Cellule "Capteurs Gauche/Droite" : une ligne par capteur (nom + courant) au lieu de la moyenne. */
+/* Cellule "Porteur 1/2" : une ligne par capteur (nom + courant) + la somme des ampérages. */
 .sensor-cell { display: flex; flex-direction: column; gap: 2px; }
 .sensor-line { display: flex; justify-content: space-between; gap: 12px; font-size: 0.82rem; }
 .sensor-line-name { color: var(--muted); }
 .sensor-line-val { font-weight: 600; font-variant-numeric: tabular-nums; }
 .sensor-line--nodata { opacity: 0.45; }                         /* capteur sans données */
 .sensor-line--imbalanced .sensor-line-val { color: var(--critical-text); }  /* écart > 10 A */
+/* Ligne "Somme" du porteur : séparée par un filet, mise en avant. */
+.sensor-sum {
+  display: flex; justify-content: space-between; gap: 12px; font-size: 0.82rem;
+  margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--border);
+}
+.sensor-sum-label { color: var(--muted); text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em; }
+.sensor-sum-val { font-weight: 700; font-variant-numeric: tabular-nums; }
 /* Bandeau de signal affiché sous les capteurs quand l'écart dépasse le seuil. */
 .sensor-signal {
   margin-top: 3px; font-size: 0.72rem; font-weight: 700; color: var(--critical-text);
   display: inline-flex; align-items: center; gap: 4px;
+}
+/* Message d'alerte d'écart persistant (> 1 min) avec décompte, sous la cellule concernée. */
+.porteur-alert {
+  margin-top: 4px; font-size: 0.7rem; font-weight: 700; color: #fff;
+  background: var(--critical); border-radius: 6px; padding: 3px 7px; line-height: 1.25;
 }
 
 /* Cellule Statut : cadran 4 zones (état des capteurs) + badge texte, alignés horizontalement. */

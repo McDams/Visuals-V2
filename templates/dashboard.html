@@ -92,9 +92,9 @@
                 <th>Statut</th>
                 <th>Alerte</th>
                 <th>Consigne</th>
-                <th>Capteurs Gauche</th>
-                <th>Écart G/D</th>
-                <th>Capteurs Droite</th>
+                <th>Porteur 2</th>
+                <th>Écart Porteur 1 - Porteur 2</th>
+                <th>Porteur 1</th>
                 <th>Job</th>
                 <th>Temps restant</th>
                 <th></th>
@@ -119,12 +119,14 @@
             <span class="legend-item"><span class="legend-dot legend-dot--critical"></span>Alerte active</span>
           </div>
           <div class="legend-group">
-            <span class="legend-title">Capteurs Gauche / Droite</span>
-            <span class="legend-item"><span class="legend-swatch"></span>Valeur en rouge : écart &gt; 10 A entre les capteurs d'un même côté</span>
+            <span class="legend-title">Porteur 1 / Porteur 2</span>
+            <span class="legend-item"><span class="legend-swatch"></span>Valeur en rouge : écart &gt; 10 A entre les 2 capteurs d'un porteur</span>
+            <span class="legend-item">« Somme » = total des ampérages du porteur</span>
           </div>
           <div class="legend-group">
-            <span class="legend-title">Écart G / D</span>
-            <span class="legend-item"><span class="legend-swatch"></span>Écart croisé &gt; 10 A (affiché uniquement quand tous les capteurs sont en marche)</span>
+            <span class="legend-title">Écart Porteur 1 - Porteur 2</span>
+            <span class="legend-item"><span class="legend-swatch"></span>|somme P1 − somme P2| &gt; 10 A (les 2 porteurs en marche)</span>
+            <span class="legend-item">Message + décompte si l'écart dure plus d'1 min</span>
           </div>
         </div>
       </section>
