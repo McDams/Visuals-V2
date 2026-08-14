@@ -458,6 +458,20 @@ function renderTankTable() {
     return `<div class="sensor-cell">${rows || '<span class="muted">--</span>'}${sum}${signal}${durationAlert}</div>`;
   };
 
+  // Cellule "Consigne" : consigne de TENSION (V) et consigne de COURANT (A) de l'automate.
+  // Rien pour les cuves sans automate exploité (KS1/KS3).
+  const consigneCell = (setpoint) => {
+    if (!setpoint) return '<span class="muted">--</span>';
+    const lines = [];
+    if (setpoint.voltage != null) {
+      lines.push(`<div class="consigne-line">${setpoint.voltage.toFixed(1).replace('.', ',')} V</div>`);
+    }
+    if (setpoint.total != null) {
+      lines.push(`<div class="consigne-line consigne-line--current">${setpoint.total} A</div>`);
+    }
+    return lines.length ? `<div class="consigne-cell">${lines.join('')}</div>` : '<span class="muted">--</span>';
+  };
+
   // Cellule "Écart Porteur 1 - Porteur 2" = |somme P1 - somme P2|. Rouge quand l'écart dépasse
   // 10 A (les deux porteurs en marche), avec message + décompte au-delà d'1 min.
   const porteurGapCell = (gap) => {
@@ -518,7 +532,7 @@ function renderTankTable() {
             ${hasProblem ? `<span class="alert-dot-count alert-dot-count--problem">${tankAlerts.length}</span>` : ''}
           </div>
         </td>
-        <td class="tabular">${view.setpoint?.voltage != null ? view.setpoint.voltage.toFixed(1).replace('.', ',') + ' V' : '<span class="muted">--</span>'}</td>
+        <td class="tabular">${consigneCell(view.setpoint)}</td>
         <td class="tabular">${porteurCell(view.nodes?.left, 'Porteur 2')}</td>
         <td class="tabular">${porteurGapCell(view.porteur_gap)}</td>
         <td class="tabular">${porteurCell(view.nodes?.right, 'Porteur 1')}</td>

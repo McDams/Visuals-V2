@@ -321,6 +321,11 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .node-cell-dot--ok { background: var(--ok); }
 .node-cell-dot--warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
 
+/* Cellule "Consigne" : tension (V) au-dessus, courant (A) en dessous (plus discret). */
+.consigne-cell { display: flex; flex-direction: column; gap: 1px; }
+.consigne-line { font-weight: 600; font-variant-numeric: tabular-nums; }
+.consigne-line--current { color: var(--muted); font-size: 0.82rem; }
+
 /* Cellule "Porteur 1/2" : une ligne par capteur (nom + courant) + la somme des ampérages. */
 .sensor-cell { display: flex; flex-direction: column; gap: 2px; }
 .sensor-line { display: flex; justify-content: space-between; gap: 12px; font-size: 0.82rem; }
