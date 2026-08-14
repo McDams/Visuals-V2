@@ -1,6 +1,6 @@
 # =====================================================================================
 # Supervision Électroformage — application Flask (dashboard temps réel des cuves).
-# Plateforme conçue et développée par Donou Awadji Mahouna Serge.
+# © DAMS
 # =====================================================================================
 import os
 

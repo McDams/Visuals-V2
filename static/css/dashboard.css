@@ -226,12 +226,13 @@ h1, h2, h3, .brand-title, .clock-time, .tank-stat-value, .modal-header h2, .kpi-
 .ticker-item--clickable:hover { text-decoration: underline; }
 @keyframes ticker { to { transform: translateX(-100%); } }
 
-/* Signature discrète du développeur, en pied de page. */
+/* Signature très discrète du développeur : initiales seules, à peine visibles. */
 .app-credit {
-  text-align: center; padding: 14px 22px 22px; font-size: 0.72rem;
-  color: var(--muted); letter-spacing: 0.02em; opacity: 0.75;
+  text-align: right; padding: 4px 10px 8px; font-size: 0.58rem;
+  color: var(--muted); letter-spacing: 0.12em; opacity: 0.3;
+  cursor: default; user-select: none;
 }
-.app-credit span { font-weight: 600; color: var(--text); opacity: 0.9; }
+.app-credit:hover { opacity: 0.6; }
 
 /* ---------- Légende ----------
    Une carte par colonne du tableau, chacune regroupant ses propres codes couleur : plus lisible

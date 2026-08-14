@@ -22,13 +22,21 @@ Aperçu
 --------
 Cette application présente un tableau de bord opérateur qui :
 
-- Affiche un **tableau récapitulatif** avec une ligne par cuve : statut (En cours / Noeud-G / Noeud-D / Arrêt), indicateur d'alerte vert/rouge, mini-graphique (tendance), courant/tension actuels, courant moyen par nœud gauche/droite, job en cours et process (recette/segment/temps restant)
-- Ouvre un **modal de détail** au clic sur une ligne (ou sur le bandeau d'alertes défilant) : graphique complet par cuve (capteurs de nœuds + automate sur un axe secondaire), tableaux de répartition gauche/droite, alertes liées à la cuve
-- Affiche un **point vert/rouge par cuve** dans le tableau ; un clic sur le point rouge ouvre un petit popover listant les alertes actives de cette cuve précisément
-- Détecte automatiquement le **job en cours** (Porteur/Cliché) à partir du courant total de la cuve, et affiche son heure de début et sa fin prévue — ou, si aucun job ne correspond, depuis quand la cuve est à l'arrêt
-- Calcule des KPI (courant/température moyens, nombre de cuves/capteurs actifs)
-- Génère des alertes (arrêt de cuve, écart de courant entre capteurs, dépassement de temps de production, pH hors plage une fois configuré, capteurs sans données récentes)
-- En mode CSV, reconstitue des séries synthétiques déterministes pour les capteurs sans données, pour que les démos restent lisibles
+- Affiche un **tableau récapitulatif** avec une ligne par cuve, dont les colonnes sont :
+  - **Statut** — un **cadran à 4 zones** (2 capteurs à gauche = Porteur 2, 2 à droite = Porteur 1) : chaque zone porte le nom du capteur et sa couleur indique l'état (vert = en marche, rouge = à l'arrêt, gris = pas de données).
+  - **Alerte** — point gris/rouge par cuve ; un clic sur le point rouge ouvre un popover listant les alertes actives de cette cuve.
+  - **Consigne** — consigne de **tension** (V) et de **courant** (A) de l'automate (rien pour les cuves sans automate exploité).
+  - **Porteur 2** (gauche) et **Porteur 1** (droite) — le courant de **chaque capteur** du porteur plus la **somme des ampérages** du porteur ; signal rouge si l'écart entre les 2 capteurs dépasse 10 A.
+  - **Écart Porteur 1 - Porteur 2** — |somme P1 − somme P2| ; passe en rouge au-delà de 10 A (les 2 porteurs en marche), avec un message + décompte si l'écart persiste plus d'1 min.
+  - **Job** — temporairement vide (valeurs pas encore fiables ; la détection reste calculée côté backend pour les alertes).
+  - **Temps restant** — temps restant remonté par l'automate, affiché seulement quand la cuve est en marche.
+- Met la ligne d'une cuve **en surbrillance bleue** quand tous ses porteurs sont à l'arrêt (état normal, distinct d'une alerte en rouge).
+- Permet de **comparer plusieurs cuves** (cases à cocher + bouton « Comparer ») dans un même modal.
+- Ouvre un **modal de détail** au clic sur une ligne (ou sur le bandeau d'alertes défilant) : graphique par cuve (capteurs + automate), sélecteur d'historique **Direct / 6 h / 24 h** avec détection des **coupures**, tableaux de répartition par porteur, alertes liées à la cuve.
+- Détecte automatiquement le **job en cours** (Porteur/Cliché) à partir du courant total de la cuve (utilisé pour l'alerte de dépassement de durée).
+- Calcule des KPI (courant/température moyens, nombre de cuves/capteurs actifs).
+- Génère des alertes (arrêt de cuve, écart de courant entre capteurs / entre porteurs, dépassement de temps de production, pH hors plage une fois configuré, capteurs sans données récentes).
+- En mode CSV, reconstitue des séries synthétiques déterministes pour les capteurs sans données, pour que les démos restent lisibles.
 
 Structure du projet
 ------------------
@@ -211,7 +219,10 @@ Tous les seuils opérationnels sont centralisés dans `services/tank_config.py` 
 
 - `NODE_MAP` — association capteur → nœud (`left`/`right`) par cuve, utilisée pour le tableau de répartition et le statut Noeud-G/Noeud-D. KS1, KS3, KS4 sont mappés à partir de leur nom de capteur. **KS2 est un placeholder** (ses capteurs manuels n'ont pas de nom en base, seulement un `eui64` — la répartition gauche/droite a été déduite du `display_order`, à corriger dans `NODE_MAP["KS2"]` dès que la disposition physique réelle est connue).
 - `STOP_CURRENT_THRESHOLD_A` (10 A) et `STOP_DURATION_SECONDS` (60 s) — définissent quand un nœud/une cuve est considéré à l'arrêt.
-- `IMBALANCE_THRESHOLD_A` (5 A) — écart maximal toléré entre les capteurs d'une même cuve avant l'alerte "Écart Ampérage".
+- `IMBALANCE_THRESHOLD_A` (5 A) — écart capteur-vs-moyenne toléré pour l'alerte "Écart Ampérage" (bandeau d'alertes).
+- `SIDE_SPREAD_THRESHOLD_A` (10 A) — écart maximal toléré **entre les 2 capteurs d'un porteur** et **entre les sommes des 2 porteurs** ; au-delà, le tableau signale un déséquilibre (valeurs en rouge) et, si le dépassement dure plus d'1 min, affiche un message avec le décompte du temps écoulé.
+- `SENSOR_DISPLAY_NAMES` — alias d'affichage forcés par cuve (clé = `name` ou `eui64`). Utilisé provisoirement pour KS2, dont les capteurs sans nom sont renommés Porteur 1 (droite) = **A/B** et Porteur 2 (gauche) = **C/D**.
+- `VOLTAGE_SETPOINT_CODE` (`voltage_setpoint`) — code de la consigne de tension de l'automate affichée dans la colonne Consigne. **Correction d'unité** : la valeur remontée est 10× trop grande (200 = 20,0 V réels), elle est donc divisée par 10 à l'affichage.
 - `CHART_CURRENT_AXIS_MAX` (220 A) — échelle fixe partagée par tous les graphiques de cuve (à garder synchronisée avec `CURRENT_AXIS_MAX` dans `static/js/dashboard.js`).
 - `JOBS` — bandes de courant utilisées pour détecter automatiquement le job actif à partir du **courant total de la cuve** (somme des 4 capteurs de nœuds gauche+droite, qui reconstitue le courant de l'automate puisqu'il est redistribué aux capteurs). Chaque entrée a `current_min`/`current_max` (A) et `max_duration_hours` ; par défaut Porteur = 75-105 A / 16 h max, Cliché = 160-200 A / 2 h max. **C'est ici qu'il faut modifier les plages de courant si elles changent** — aucun autre fichier à toucher. Le dashboard affiche l'heure de début du job et sa fin prévue (début + `max_duration_hours`) ; si le courant ne correspond à aucune bande, il affiche depuis quand la cuve est à l'arrêt à la place. L'alerte "Temps de production" se déclenche si la durée écoulée dépasse `max_duration_hours`.
 - `PH_MEASUREMENT_CODE` / `PH_MIN` / `PH_MAX` — inactifs par défaut : aucun code de mesure pH n'existe dans le schéma actuel. Renseignez ces trois valeurs (code de `measurement_types` + plage acceptable) pour activer l'alerte "Alerte pH".
@@ -220,7 +231,7 @@ Notes sur les capteurs individuels : dans les données actuelles, seuls les auto
 
 Santé des capteurs : chaque tableau de nœud (gauche/droite) affiche un point vert/rouge par capteur indiquant s'il a **réellement** envoyé une mesure de courant (par opposition à la série synthétique de secours utilisée quand un capteur n'a aucune donnée) — c'est ce qui répond à "est-ce que ce capteur envoie bien ses données dans la base". Le compteur "Capteurs actifs" du modal (X / 4) résume ce même signal pour la cuve entière. Séparément, l'indicateur "Données en direct" / "Connexion perdue" en haut de page et l'heure de "Dernière synchronisation" confirment que **l'application web** reçoit bien les réponses de l'API — si l'un de ces deux signaux est mauvais alors que le point capteur est vert, le problème est côté base/réseau plutôt que côté capteur.
 
-À noter en mode démo (CSV) : `db/measurements.csv` ne contient des lignes `current_measured` que pour les deux automates (`Auto KS2`, `Auto KS4`) — tous les capteurs de nœuds y utilisent donc la série synthétique de secours et affichent "0/2 capteurs" (attendu, pas un bug). Les courants synthétiques (~3,8-4,3 A) sont aussi sous le seuil de 10 A, donc toutes les cuves affichent le statut "Arrêt". En mode PostgreSQL avec des courants de production réels, les statuts En cours / Noeud-G / Noeud-D et les compteurs de capteurs actifs refléteront l'activité réelle.
+À noter en mode démo (CSV) : `db/measurements.csv` ne contient des lignes `current_measured` que pour les deux automates (`Auto KS2`, `Auto KS4`) — tous les capteurs de porteurs y utilisent donc la série synthétique de secours et sont marqués "pas de données" (gris) dans le cadran (attendu, pas un bug). Les courants synthétiques (~3,8-4,3 A) sont aussi sous le seuil de 10 A, donc toutes les cuves sont considérées à l'arrêt (ligne en surbrillance bleue), les zones du cadran ne sont jamais vertes, et la colonne "Écart Porteur 1 - Porteur 2" reste vide (les écarts ne sont évalués que cuve pleinement en marche). En mode PostgreSQL avec des courants de production réels, les états des capteurs, les sommes par porteur et les écarts refléteront l'activité réelle.
 
 Sécurité
 -----------------------
@@ -248,3 +259,5 @@ Dépannage
 - **Dashboard vide malgré une connexion réussie** : la fenêtre `REALTIME_WINDOW_MINUTES` (60 minutes par défaut) ne contient peut-être aucune mesure récente — augmentez-la temporairement, ou vérifiez que la table `measurements` reçoit bien des données en continu.
 - **`USE_POSTGRES=true` mais l'app lit toujours les CSV** : vérifiez que le fichier `.env` est bien à la racine du projet (à côté de `app.py`) et qu'il n'y a pas d'espace autour du `=`. Redémarrez l'application après toute modification du `.env` (il n'est lu qu'au démarrage).
 - **Graphiques vides en mode CSV** : vérifiez que `db/measurements.csv` contient des lignes avec des timestamps ISO valides.
+
+<sub>© DAMS</sub>

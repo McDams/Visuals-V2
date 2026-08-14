@@ -1,6 +1,6 @@
 // =====================================================================================
 // Supervision Électroformage — Dashboard temps réel des cuves d'électroformage.
-// Plateforme conçue et développée par Donou Awadji Mahouna Serge.
+// © DAMS
 // =====================================================================================
 
 // Instances Chart.js vivantes, indexées par id de canvas (pour pouvoir les détruire avant
